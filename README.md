@@ -31,14 +31,16 @@ produces the safe outcome, so the rule is not defeated by ordinary forgetting, a
 mode is loud rather than silent: the thing you wanted requires an artifact that is either there
 or is not.
 
-## The shape: a gyroscope, not rifling
+## Why a gyroscope
 
 A session is a flow — the default toward *proceed, it looks complete, keep going* reasserts at
-every turn, not once at entry, so a single cut at the entrance is spent by turn three. What holds
-a flow is a counterweight: spun up once, continuously present, opposing drift with matched force
-at every moment, requiring no attention and no trigger. That is why Gyroscope is a hook and not
-an installer, why it registers on every event rather than at session start, and why there is a
-ledger: the ledger is the stored state that keeps the counterweight spun up across turns.
+every turn, not once at entry, so one instruction at the entrance is spent by turn three. What
+holds a flow is a gyroscope: spun up once and then continuously present, opposing drift with
+matched force at every moment, requiring no attention and no trigger. It does not choose the
+direction — it prevents tumbling off the axis you set. That is why this is a hook registered on
+every event rather than something that runs at session start, and why there is a ledger: the
+ledger is the stored state that keeps the gyroscope spun up across turns, so each turn inherits
+the opposition instead of re-earning it.
 
 ## The mechanism
 
@@ -49,7 +51,7 @@ ledger: the ledger is the stored state that keeps the counterweight spun up acro
 
 A `PreToolUse` deny records a **demand**; a later call matching the clause's guard records a
 **discharge**; at `Stop` anything still open blocks. A licence is an **observed discharge**,
-never an absent demand — absence is NOT-EVALUABLE, never a pass.
+never an absent demand — the absence of evidence is never treated as permission.
 
 This package carries two arms:
 
@@ -76,17 +78,18 @@ If serialized `tool_input` contains `gyroscope-allow:` followed by non-whitespac
 `PreToolUse` returns an empty decision before evaluating any clause. The code does not require
 the marker to occupy its own line.
 
-## Why this is not a Ward check
+## Why this is not a deny list
 
-Ward's verdict is a pure function of one event. For a matching costly call, Gyroscope's decision
+[Ward](https://github.com/Clear-Sights/ward), a sibling plugin, is a deny list: its verdict is a
+pure function of one event. For a matching costly call, Gyroscope's decision
 is a function of `(event, ledger)`: it is denied before the clause's guard discharge and admitted
 afterward. Gyroscope does not substitute a safer action and does not remove a fate — it changes
 whether the *same* call executes now or waits until its licensing evidence exists.
 
 ## Honest limitations
 
-- **Behaviour change is unmeasured.** Mechanism tests pass; the three-arm battery that would
-  measure whether the plugin changes agent behaviour is designed, not run.
+- **Behaviour change is unmeasured.** Mechanism tests pass; the controlled experiment that
+  would measure whether the plugin actually changes agent behaviour is designed, not run.
 - **The ledger constrains an honest-but-forgetful agent, not a forging one.** Its hash chain
   detects altered rows and broken or missing hashes, but not deletion of a valid tail; a writer
   able to forge rows can recompute hashes.
@@ -94,9 +97,10 @@ whether the *same* call executes now or waits until its licensing evidence exist
   live Claude Code or Codex installation.
 - **Licences are per clause and session/agent thread or per operand** — not per filesystem
   target, ref, or command.
-- **Nine clauses carry `_quarantine_reason`/`_conservation` metadata** — the register's
-  evidence-conservation record for rows measured NOT-EVALUABLE on the frozen corpus, conserved
-  rather than deleted. Retired clauses themselves are excluded from this package.
+- **Nine clauses carry `_quarantine_reason`/`_conservation` metadata.** These are records of
+  why a rule could not be validated against measured data, kept with the rule instead of
+  deleted so the reasoning can be re-examined. Rules that were retired outright are excluded
+  from this package.
 
 ## License
 
