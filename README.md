@@ -58,8 +58,8 @@ This package carries two arms:
 - **`plugin/`** — the dispatcher (`gyroscope/`), the shipped clause table
   (`gyroscope/clauses.json`, 24 admitted clauses), the POSIX shim (`hooks/dispatch.sh`), and hook
   manifests for both supported hosts. Every fingerprint is an exact predicate over command, tool,
-  or path identity — no clause infers intent from prose. Carriage fails OPEN: a wiring fault must
-  not block the host.
+  or path identity — no clause infers intent from prose. The hook fails open: if the dispatcher
+  cannot run, it stays silent rather than blocking the host.
 - **`skill/`** — `SKILL.md` plus session hooks, wired via `hooks/settings.fragment.json`. This
   arm covers the guards that leave no mark in a call sequence (clarify before committing to a
   plan, confirm a checker can fail, run the entrypoint a user runs);
@@ -70,13 +70,12 @@ This package carries two arms:
 - **Claude Code** — `hooks/hooks.json` is already the right shape; the bundle registers via
   `.claude-plugin/plugin.json`. Zero extra action.
 - **Codex** — copy `hooks/hooks.codex.json` to the location Codex reads (`.codex/hooks.json` in a
-  project). A union file carrying both shapes was tested live and does not fire on Codex.
+  project).
 
 ### Manual bypass
 
 If serialized `tool_input` contains `gyroscope-allow:` followed by non-whitespace text,
-`PreToolUse` returns an empty decision before evaluating any clause. The code does not require
-the marker to occupy its own line.
+`PreToolUse` returns an empty decision before evaluating any clause.
 
 ## Why this is not a deny list
 
@@ -95,12 +94,9 @@ whether the *same* call executes now or waits until its licensing evidence exist
   able to forge rows can recompute hashes.
 - **No live-host result is recorded here.** Manifest generation and the unit suite do not prove a
   live Claude Code or Codex installation.
-- **Licences are per clause and session/agent thread or per operand** — not per filesystem
-  target, ref, or command.
-- **Nine clauses carry `_quarantine_reason`/`_conservation` metadata.** These are records of
-  why a rule could not be validated against measured data, kept with the rule instead of
-  deleted so the reasoning can be re-examined. Rules that were retired outright are excluded
-  from this package.
+- **A licence is scoped to its clause and session** — one observed guard licenses later
+  matching calls for that clause anywhere in the same session, not just against the same file,
+  branch, or command.
 
 ## License
 
