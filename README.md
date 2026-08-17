@@ -9,19 +9,20 @@
 
 ## The problem
 
-Some mistakes fix themselves if you just keep working. Others don't. An agent that force-pushes
-over a remote branch it never fetched, deletes a build directory nobody inventoried, or declares
-a task done while the tree is dirty has not just erred — it has destroyed the evidence needed to
-notice the error. No later step corrects it, because the material a correction would need is
-gone. The only exit is a restart that throws away everything the session accumulated.
+Gyroscope opposes one shape of failure: where **doing nothing is the thing that does not heal**.
+Not where an act is dangerous, not where something ends badly — where the *default* lands the
+session somewhere it cannot recover from. The harm needs no author, only the absence of one.
 
-What makes these failures dangerous is that they are the *default*. The cheap check that would
-catch them — a `git fetch` before the force-push, a `git status` before declaring done — takes
-effort and is exactly the kind of step a busy session forgets. Doing nothing produces the
-unhealing outcome; only remembering produces the safe one. Gyroscope's internal name for that
-shape is **asymmetry**: the harm needs no author, only the absence of one. The worst case is the
-green check — greenness is what ends the run, so a wrong "it passed" doesn't merely fail, it
-consumes the opportunity to notice.
+A bad outcome heals three ways: it corrects (requires an action), it stops mattering (passive),
+or you restart (requires an action, and discards everything the session accumulated). Only the
+middle one happens when nobody acts. The failures Gyroscope exists for are the ones that, left
+alone, heal by restart at best or not at all — and what produces them is not a wrong move but an
+ordinary one: *proceed, it looks complete, keep going*. The cheap step that would prevent them
+takes effort and is exactly what a flowing session forgets.
+
+The purest case is a green check. Greenness is what ends the run, so a wrong "it passed" does
+not merely fail — it consumes the opportunity to notice, because investigating requires first
+reversing "it's green."
 
 ## How it heals: reversal
 
