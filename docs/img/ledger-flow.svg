@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-labelledby="title desc">
+  <title id="title">The obligation ledger</title>
+  <desc id="desc">A costly call is denied and recorded as a demand; the cheap guard discharges it; the same call then executes; Stop blocks while demands stay open.</desc>
+  <style>
+    .background { fill: #f6f8fa; }
+    .border { fill: none; stroke: #d0d7de; }
+    .box { fill: #ffffff; stroke: #d0d7de; }
+    .deny-box { fill: #ffebe9; stroke: #cf222e; }
+    .allow-box { fill: #dafbe1; stroke: #1a7f37; }
+    .label { fill: #1f2328; }
+    .small { fill: #59636e; }
+    .deny-text { fill: #cf222e; }
+    .allow-text { fill: #1a7f37; }
+    .arrow { stroke: #59636e; fill: none; }
+    .arrow-head { fill: #59636e; }
+    .ledger { fill: #ffffff; stroke: #9a6700; }
+    .ledger-text { fill: #9a6700; }
+    @media (prefers-color-scheme: dark) {
+      .background { fill: #0d1117; }
+      .border { stroke: #30363d; }
+      .box { fill: #161b22; stroke: #30363d; }
+      .deny-box { fill: #2d1215; stroke: #f85149; }
+      .allow-box { fill: #12261e; stroke: #3fb950; }
+      .label { fill: #f0f6fc; }
+      .small { fill: #b1bac4; }
+      .deny-text { fill: #f85149; }
+      .allow-text { fill: #3fb950; }
+      .arrow { stroke: #b1bac4; }
+      .arrow-head { fill: #b1bac4; }
+      .ledger { fill: #161b22; stroke: #d29922; }
+      .ledger-text { fill: #d29922; }
+    }
+    text { font-family: system-ui, sans-serif; }
+  </style>
+
+  <rect class="background" x="1" y="1" width="1198" height="298" rx="18"/>
+  <rect class="border" x="1" y="1" width="1198" height="298" rx="18"/>
+
+  <!-- stage 1: costly call denied -->
+  <rect class="deny-box" x="50" y="60" width="240" height="80" rx="10" stroke-width="2"/>
+  <text class="label" x="170" y="95" font-size="22" font-weight="700" text-anchor="middle">costly call</text>
+  <text class="deny-text" x="170" y="124" font-size="19" font-weight="600" text-anchor="middle">DENIED — demand recorded</text>
+
+  <!-- stage 2: guard discharges -->
+  <rect class="box" x="390" y="60" width="240" height="80" rx="10" stroke-width="2"/>
+  <text class="label" x="510" y="95" font-size="22" font-weight="700" text-anchor="middle">cheap guard runs</text>
+  <text class="small" x="510" y="124" font-size="19" text-anchor="middle">discharge observed</text>
+
+  <!-- stage 3: same call allowed -->
+  <rect class="allow-box" x="730" y="60" width="240" height="80" rx="10" stroke-width="2"/>
+  <text class="label" x="850" y="95" font-size="22" font-weight="700" text-anchor="middle">same call again</text>
+  <text class="allow-text" x="850" y="124" font-size="19" font-weight="600" text-anchor="middle">ALLOWED — licence on record</text>
+
+  <!-- stage 4: stop gate -->
+  <rect class="box" x="1030" y="60" width="130" height="80" rx="10" stroke-width="2"/>
+  <text class="label" x="1095" y="95" font-size="22" font-weight="700" text-anchor="middle">Stop</text>
+  <text class="small" x="1095" y="124" font-size="17" text-anchor="middle">blocks if open</text>
+
+  <!-- arrows -->
+  <g stroke-width="3" stroke-linecap="round">
+    <line class="arrow" x1="290" y1="100" x2="374" y2="100"/>
+    <path class="arrow-head" d="M374 93L390 100L374 107Z" stroke="none"/>
+    <line class="arrow" x1="630" y1="100" x2="714" y2="100"/>
+    <path class="arrow-head" d="M714 93L730 100L714 107Z" stroke="none"/>
+    <line class="arrow" x1="970" y1="100" x2="1014" y2="100"/>
+    <path class="arrow-head" d="M1014 93L1030 100L1014 107Z" stroke="none"/>
+  </g>
+
+  <!-- ledger -->
+  <rect class="ledger" x="390" y="196" width="580" height="66" rx="10" stroke-width="2"/>
+  <text class="ledger-text" x="680" y="224" font-size="20" font-weight="700" text-anchor="middle">obligation ledger</text>
+  <text class="small" x="680" y="250" font-size="17" text-anchor="middle">demand → discharge, hash-chained per session; a licence is an observed discharge, never an absent demand</text>
+
+  <!-- ledger connections -->
+  <g stroke-width="2" stroke-dasharray="6 5" stroke-linecap="round">
+    <line class="arrow" x1="170" y1="140" x2="440" y2="196"/>
+    <line class="arrow" x1="510" y1="140" x2="510" y2="196"/>
+    <line class="arrow" x1="850" y1="140" x2="900" y2="196"/>
+  </g>
+</svg>
