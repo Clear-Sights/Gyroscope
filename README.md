@@ -36,10 +36,30 @@ conserved rather than deleted. Retired clauses themselves are excluded from this
 (clarify before committing to a plan, confirm a checker can fail, run the entrypoint a user runs);
 `gyroscope-sessionstart.sh` prints `SKILL.md` into context at session start.
 
+## Why this is not a Ward check
+
+Ward's verdict is a pure function of one event. For a matching costly call, Gyroscope's decision
+is a function of `(event, ledger)`: it is denied before the clause's guard discharge and admitted
+afterward. That temporal obligation mechanism is what separates the two — Gyroscope denies the
+*same* action until its licensing evidence exists, rather than denying outright.
+
 ## Manual bypass
 
 If serialized `tool_input` contains `gyroscope-allow:` followed by non-whitespace text,
-`PreToolUse` returns an empty decision before evaluating any clause.
+`PreToolUse` returns an empty decision before evaluating any clause. The code does not require
+the marker to occupy its own line.
+
+## Honest limitations
+
+- **Behaviour change is unmeasured.** Mechanism tests pass; the three-arm battery that would
+  measure whether the plugin changes agent behaviour is designed, not run.
+- **The ledger constrains an honest-but-forgetful agent, not a forging one.** Its hash chain
+  detects altered rows and broken or missing hashes, but not deletion of a valid tail; a writer
+  able to forge rows can recompute hashes.
+- **No live-host result is recorded here.** Manifest generation and the unit suite do not prove a
+  live Claude Code or Codex installation.
+- **Licences are per clause and session/agent thread or per operand** — not per filesystem
+  target, ref, or command.
 
 ## License
 
