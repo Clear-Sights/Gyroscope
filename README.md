@@ -7,26 +7,36 @@
 
 **One purpose: do not let the session derail irreversibly.**
 
-The drift it opposes is **asymmetry**: where the DEFAULT is the unhealing issue. Not where an act
-is dangerous, not where something ends badly — where *doing nothing* lands you somewhere that
-does not heal. `rm -rf build/` is a moment; the state it leaves is one where the evidence of what
-was there is gone, and you cannot correct what you cannot reconstruct. The highest asymmetry is
-when the correct path is unreachable without reversing the default — a green check is the pure
-case: greenness is what ends the run, so investigating requires first reversing "it's green."
+## The problem
+
+Some mistakes fix themselves if you just keep working. Others don't. An agent that force-pushes
+over a remote branch it never fetched, deletes a build directory nobody inventoried, or declares
+a task done while the tree is dirty has not just erred — it has destroyed the evidence needed to
+notice the error. No later step corrects it, because the material a correction would need is
+gone. The only exit is a restart that throws away everything the session accumulated.
+
+What makes these failures dangerous is that they are the *default*. The cheap check that would
+catch them — a `git fetch` before the force-push, a `git status` before declaring done — takes
+effort and is exactly the kind of step a busy session forgets. Doing nothing produces the
+unhealing outcome; only remembering produces the safe one. Gyroscope's internal name for that
+shape is **asymmetry**: the harm needs no author, only the absence of one. The worst case is the
+green check — greenness is what ends the run, so a wrong "it passed" doesn't merely fail, it
+consumes the opportunity to notice.
 
 ## How it heals: reversal
 
-The fix is a repricing, not a prohibition:
+Gyroscope swaps which outcome is free. The costly call is denied until the cheap check it
+depends on is *observed on record*; once it is, the same call runs. Forgetting now produces the
+safe outcome instead of the unhealing one:
 
-| | the costly call | the guard |
+| | the costly call | the cheap check |
 |---|---|---|
 | before | free — it just runs | takes effort, and is forgotten |
 | after | costs one cheap call on record | free — denial is the resting state |
 
-Same object, two reachable fates, the cost assignment swapped, nothing added. Forgetting now
-produces the safe outcome, so the rule is not defeated by ordinary forgetting, and its failure
-mode is loud rather than silent: the thing you wanted requires an artifact that is either there
-or is not.
+This is a repricing, not a prohibition: both outcomes stay reachable, the cost assignment is
+swapped, nothing is added. And its failure mode is loud rather than silent — the thing you
+wanted requires an artifact that is either there or is not.
 
 ## The shape: a gyroscope, not rifling
 
