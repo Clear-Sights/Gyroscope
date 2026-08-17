@@ -1,0 +1,406 @@
+"""One entrypoint, every event. A capability is a row, never a module.
+
+Adding an event is adding a row to HANDLERS, never another branch in main(). The lookup's default
+is the wildcard: an event with no specialist row is still held to the clause table, so newly wired
+events cannot silently bypass evaluation.
+
+WIRE FORMAT is identical on Claude Code and codex, verified against both specs:
+  PreToolUse deny  -> {"hookSpecificOutput": {..., "permissionDecision": "deny", ...}}
+  Stop block       -> {"decision": "block", "reason": ...}
+  SessionStart     -> {"hookSpecificOutput": {..., "additionalContext": ...}}
+A decision is a JSON decision, not an exit code. Blocks exit 0 with JSON on stdout.
+
+FAIL DIRECTION IS SPLIT, and the split is the point. Carriage -- unreadable stdin, a missing
+interpreter, any fault that means the hook could not be reached -- fails OPEN with exit 0 + {},
+because carriage that blocks is worse than carriage that is absent. A DECISION that could not be
+computed fails CLOSED via _closed_not_evaluable(), which emits the event's own deny/block wire.
+An event with no closed wire falls back to carriage rather than inventing one.
+
+EXIT 2 IS NOT USED HERE. Not because it means something unusual -- verified against the hooks
+reference, "exit 2 blocks whether or not you print JSON", on BOTH hosts -- but precisely because
+it does: a dispatcher bug that exited 2 would deny every tool call for the rest of the session,
+healing only by uninstalling the gate.
+"""
+from __future__ import annotations
+
+import json
+import re
+from re import error
+import sys
+
+from . import clauses as C
+from .ledger import Demand, Ledger, derive_id
+
+# LINE-BOUND, and only on the fields an author types deliberately.
+#
+# This used to search the whole serialized tool_input, which meant a Write whose CONTENT merely
+# contained the marker disabled every clause for that call -- an exemption anyone could trip by
+# quoting the documentation. A doc audit against the code caught it. The exemption stays
+# on-the-record and auditable, never a disguise: it must be its own line, in the command being
+# run, and it must carry a reason.
+ALLOW = re.compile(r"(?m)^\s*(?:#|//|--)?\s*gyroscope-allow:\s*(\S.*)$")
+ALLOW_FIELDS = ("tool_input.command",)
+
+
+def _get(event: dict, path: str):
+    cur = event
+    for part in path.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            return None
+        cur = cur[part]
+    return cur
+
+
+def _ids(event: dict) -> tuple[str, str]:
+    """Per-thread, never pooled. A main-thread Stop is structurally agentless; an ambiguous
+    agent id contributes nothing rather than borrowing a sibling's demands."""
+    return str(event.get("session_id") or ""), str(event.get("agent_id") or "")
+
+
+def _subject(clause, event: dict) -> str:
+    """The ledger key. It must yield the SAME value for the costly act and for its guard.
+
+    A whole-field key cannot do that when both arrive as commands: `rm -rf build/` and
+    `ls -la build/` are different strings, so keying on tool_input.command would give the guard a
+    different key from the demand it is meant to license, and nothing would ever discharge. The
+    shared thing is the operand -- `build/` -- so a subject may also be an EXTRACTOR that pulls
+    the same operand out of both commands.
+
+    A dict subject with no match yields "" and the caller treats that as unkeyable; an empty key
+    would silently merge every demand for the clause, which is worse than a coarse honest one.
+    """
+    spec = clause.subject
+    if isinstance(spec, dict):
+        raw = _get(event, spec.get("on") or "tool_input.command")
+        # A segment-scoped predicate matched ONE segment; the subject must be extracted
+        # from that segment, not the whole string, or a two-command line keys the wrong
+        # operand and the deny names something the guard cannot discharge.
+        scoped = C.matching_segment(clause.fingerprint, event)
+        if scoped is not None:
+            raw = scoped
+        if not isinstance(raw, str):
+            return ""
+        m = re.search(spec.get("pattern") or "", raw)
+        if not m:
+            return ""
+        try:
+            return str(m.group(spec.get("group", 1)) or "")[:200]
+        except (IndexError, error):
+            return ""
+    return str(_get(event, spec) or "")[:200]
+
+
+def _deny(reason: str) -> dict:
+    return {"hookSpecificOutput": {"hookEventName": "PreToolUse",
+                                   "permissionDecision": "deny",
+                                   "permissionDecisionReason": reason}}
+
+
+# A deny that does not name what it is keyed on is an unhealing loop, not an interruption.
+#
+# The ledger discharges on the SUBJECT -- the operand shared by the act and its guard. So
+# `realpath build/` does not license `touch newfile`: different subject, different key. Measured:
+# `touch newfile` denied 12 times out of 12 while the session ran the guard on the wrong path, and
+# the reason it was shown said only "run `realpath` on the target first". That loop does not heal
+# by being forgotten (it fires on every attempt) and it does not heal by being noticed (the message
+# withholds the one fact that would end it), so it heals only by restart.
+#
+# Naming the subject is the whole repair, and it is a reversal rather than an addition: the same
+# two fates stay reachable and nothing new is demanded of the session -- the correct one simply
+# stops being hidden.
+# Two scopes exist and they discharge differently, so one sentence cannot serve both. A dict
+# subject is an EXTRACTOR: it pulls an operand out of the command, and only a guard naming that
+# same operand discharges it. A plain `session_id` subject is SESSION-WIDE: any guard call clears
+# it once, for everything. Saying "keyed on `drive`" for the session case -- which is what naming
+# the raw subject produced -- is worse than silence, because it points the session at its own id.
+def _keyed_reason(clause, subject: str) -> str:
+    base = f"[{clause.id}] {clause.deny_reason}"
+    if isinstance(clause.subject, dict):
+        if not subject:
+            return base
+        return (f"{base} -- keyed on `{subject}`, so the guard must name `{subject}` too; "
+                f"the same guard on another target does not discharge this.")
+    return f"{base} -- discharges once per session, for every target."
+
+
+def _segments(command: str) -> list[str]:
+    """Split a shell string on `;` `&&` `||` `|`, respecting quotes.
+
+    `shlex` cannot do this -- it tokenizes words, not control operators -- and a naive `re.split`
+    would cut inside `grep 'a|b'`. Quote-aware scanning is the smallest thing that is correct.
+    """
+    return C.segments(command)
+
+
+def _first_index(clause, event: dict, predicate, command: str) -> int:
+    """Index of the first segment satisfying `predicate`, or -1.
+
+    Whole-string matching cannot order a guard against the act it guards, which is how
+    `git push origin main && git status` licensed its own push: `discharges()` was true of the
+    string, so the push never reached the demand. Order is the entire question, so the answer has
+    to be computed per segment.
+    """
+    for index, segment in enumerate(_segments(command)):
+        probe = dict(event)
+        probe["tool_input"] = {**(event.get("tool_input") or {}), "command": segment}
+        try:
+            if predicate(clause, probe):
+                return index
+        except Exception:
+            continue
+    return -1
+
+
+def _block(reason: str) -> dict:
+    return {"decision": "block", "reason": reason}
+
+
+def _context(text: str, event_name: str = "SessionStart") -> dict:
+    return {"hookSpecificOutput": {"hookEventName": event_name, "additionalContext": text}}
+
+
+def _closed_not_evaluable(event: dict, detail: str) -> dict | None:
+    """Return the closed wire for a known event; None means only exit status can express it."""
+    reason = f"gyroscope could not evaluate this event: {detail} -- NOT-EVALUABLE, not a pass"
+    name = event.get("hook_event_name")
+    if name == "PreToolUse":
+        return _deny(reason)
+    if name in ("Stop", "SubagentStop"):
+        return _block(reason)
+    return None
+
+
+def _applicable(table, event: dict):
+    name, tool = event.get("hook_event_name"), event.get("tool_name")
+    for cl in table:
+        if cl.event != name:
+            continue
+        if cl.tools and cl.tools != ["*"] and tool not in cl.tools:
+            continue
+        yield cl
+
+
+def pre_tool_use(table, ledger: Ledger, event: dict) -> dict:
+    """FAIL CLOSED per row is wrong here and right at Stop: a deny that cannot be computed is
+    not a deny. But a clause that raises must never suppress the other twenty-five, so each is
+    isolated -- that is a different axis from the row's fail direction."""
+    session, agent = _ids(event)
+    for field in ALLOW_FIELDS:
+        value = _get(event, field)
+        if isinstance(value, str) and ALLOW.search(value):
+            return {}
+    _watch_standing(table, ledger, event, session, agent)
+    command = _get(event, "tool_input.command")
+    for cl in _applicable(table, event):
+        try:
+            if C.discharges(cl, event):
+                # A guard only licenses acts that come AFTER it. When one string carries both, the
+                # segment order decides: guard-then-act discharges, act-then-guard does not, and
+                # `git push && git status` is the second. Falling through to the match below is
+                # what turns the self-licence back into a deny.
+                if isinstance(command, str):
+                    act_at = _first_index(cl, event, C.match, command)
+                    guard_at = _first_index(cl, event, C.discharges, command)
+                    if act_at != -1 and guard_at > act_at:
+                        subject = _subject(cl, event)
+                        did = derive_id(session, agent, cl.id, subject)
+                        if not ledger.is_licensed(session, agent, did):
+                            ledger.demand(Demand(id=did, session=session, agent=agent,
+                                                 clause_id=cl.id, subject=subject,
+                                                 reason=cl.deny_reason))
+                            return _deny(_keyed_reason(cl, subject))
+                        continue
+                subject = _subject(cl, event)
+                did = derive_id(session, agent, cl.id, subject)
+                ledger.discharge(session, agent, did, "guard call observed")
+                continue
+            if C.match(cl, event):
+                subject = _subject(cl, event)
+                if isinstance(cl.subject, dict) and not subject:
+                    # The extractor found no operand, so this event cannot be keyed. Denying
+                    # under the empty key would merge every demand for this clause into one
+                    # bucket; passing would be absence-counts-as-pass. It is NOT-EVALUABLE, so
+                    # the clause abstains on this event and says nothing about it.
+                    continue
+                did = derive_id(session, agent, cl.id, subject)
+                # The licence must be an OBSERVED discharge, never merely an absent demand.
+                if ledger.is_licensed(session, agent, did):
+                    continue
+                ledger.demand(Demand(id=did, session=session, agent=agent,
+                                     clause_id=cl.id, subject=subject,
+                                     reason=cl.deny_reason))
+                return _deny(_keyed_reason(cl, subject))
+        except Exception:
+            continue
+    return {}
+
+
+def post_tool_use(table, ledger: Ledger, event: dict) -> dict:
+    session, agent = _ids(event)
+    _watch_standing(table, ledger, event, session, agent)
+    for cl in _applicable(table, event):
+        try:
+            if C.discharges(cl, event):
+                did = derive_id(session, agent, cl.id, _subject(cl, event))
+                ledger.discharge(session, agent, did, "guard call completed")
+        except Exception:
+            continue
+    return {}
+
+
+def _watch_standing(table, ledger: Ledger, event: dict, session: str, agent: str) -> None:
+    """A terminal clause's guard is not a Stop event -- it is an ordinary call made earlier.
+
+    So Stop clauses must be watched on EVERY event, not only on events whose name matches the
+    clause's own. Without this a terminal clause could never be discharged and would block every
+    Stop, which is the false-block failure that makes a gate get switched off.
+    """
+    for cl in table:
+        if cl.event not in ("Stop", "SubagentStop"):
+            continue
+        try:
+            # Activation is observed on ordinary events, exactly as a standing guard is, and is
+            # recorded through the same demand/discharge pair under a distinct subject -- so the
+            # ledger needs no new row shape to carry "the occasion happened".
+            if cl.activated_by is not None and C._predicate(cl.activated_by, event):
+                key = C.event_key(cl.activated_by, event)
+                if cl.activated_by.get("key_from") is not None:
+                    if not key:
+                        continue
+                    subject = f"standing:{key}"
+                    did = derive_id(session, agent, cl.id, subject)
+                    ledger.demand(Demand(id=did, session=session, agent=agent, clause_id=cl.id,
+                                         subject=subject, reason=cl.deny_reason))
+                    continue
+                aid = derive_id(session, agent, cl.id, "activated")
+                ledger.demand(Demand(id=aid, session=session, agent=agent, clause_id=cl.id,
+                                     subject="activated", reason="occasion observed"))
+                ledger.discharge(session, agent, aid, "occasion observed")
+            if C.discharges(cl, event):
+                key = C.event_key(cl.discharged_by, event)
+                if cl.discharged_by.get("key_from") is not None and not key:
+                    continue
+                subject = f"standing:{key}" if key else "standing"
+                did = derive_id(session, agent, cl.id, subject)
+                ledger.discharge(session, agent, did, "standing guard observed")
+        except Exception:
+            continue
+
+
+def reconcile(table, ledger: Ledger, event: dict) -> dict:
+    """Terminal reconciliation. Fails CLOSED: a gate that cannot decide has not decided, and
+    reporting success by default is the one failure this whole loop exists to refuse."""
+    # Claude Code marks the Stop/SubagentStop caused by our own preceding block. Re-blocking that
+    # event cannot discharge an obligation: it only spends another forced continuation until the
+    # host's block cap fails open. Quarantine this repeated decision (not the clauses or ledger
+    # rows); the named successor is the next non-active terminal event, which evaluates them again.
+    if event.get("stop_hook_active") is True:
+        return {}
+    session, agent = _ids(event)
+    try:
+        open_rows = ledger.open_demands(session, agent)
+    except Exception as exc:
+        return _block(f"gyroscope could not read its ledger: {type(exc).__name__} "
+                      f"-- NOT-EVALUABLE, not a pass")
+    undischarged = []
+    event_name = event.get("hook_event_name", "Stop")
+    for cl in table:
+        # Enforce a clause only at the event it DECLARES. This read `not in (Stop, SubagentStop)`,
+        # so a clause declaring Stop was also enforced at SubagentStop -- under a different agent's
+        # ledger key, where its guard could not have been recorded. Measured: a subagent that only
+        # read files was blocked demanding `git status` and `git fetch` under its own agent_id.
+        # A clause that fires where it did not declare is the false-block that gets a gate switched
+        # off, and a switched-off gate has zero coverage.
+        if cl.event != event_name:
+            continue
+        # Keyed activations materialize their own per-key demand rows as the occasions arrive.
+        # They need no synthetic session-wide standing row; open_demands above reconciles them.
+        if cl.activated_by is not None and cl.activated_by.get("key_from") is not None:
+            continue
+        # A demand that never had its occasion is not an unmet obligation. T02's fingerprint is
+        # `always`, so before this a read-only session that never pushed was blocked at Stop for a
+        # fetch it had no reason to run -- a cost paid at every single ending.
+        if cl.activated_by is not None and not ledger.is_licensed(
+                session, agent, derive_id(session, agent, cl.id, "activated")):
+            continue
+        did = derive_id(session, agent, cl.id, "standing")
+        if not ledger.is_licensed(session, agent, did):
+            undischarged.append({"clause_id": cl.id, "reason": cl.deny_reason})
+
+    open_rows = list(open_rows) + undischarged
+    if not open_rows:
+        return {}
+    lines = "; ".join(f"[{r['clause_id']}] {r['reason']}" for r in open_rows[:5])
+    return _block(f"{len(open_rows)} unreconciled obligation(s): {lines}")
+
+
+def session_start(table, ledger: Ledger, event: dict) -> dict:
+    """Fails OPEN: a hook that cannot read its own map must not stop the session."""
+    try:
+        rows = " | ".join(f"{c.id}: {c.guard}" for c in table)
+        event_name = event.get("hook_event_name", "SessionStart")
+        return _context(f"gyroscope active, {len(table)} clauses. {rows}", event_name)
+    except Exception:
+        return {}
+
+
+HANDLERS = {
+    "PreToolUse": pre_tool_use,
+    "PostToolUse": post_tool_use,
+    "Stop": reconcile,
+    "SubagentStop": reconcile,
+    "SessionStart": session_start,
+    "SubagentStart": session_start,
+}
+
+
+def main() -> int:
+    try:
+        event = json.loads(sys.stdin.read() or "{}")
+        if not isinstance(event, dict):
+            raise ValueError("event is not an object")
+    except Exception as exc:
+        print(f"gyroscope: unreadable event ({type(exc).__name__}) -- NOT-EVALUABLE", file=sys.stderr)
+        print("{}")
+        return 0
+    # One event, one set of probe measurements. Free in production (fresh process per event);
+    # explicit here so a host that ever reuses a process cannot inherit stale answers.
+    C.reset_probe_cache()
+    try:
+        table = C.load_default()
+        # Absence must never read as green. Found by removing the input: with the clause directory
+        # empty, `rm -rf build/` was ALLOWED and Stop returned {} -- a clean bill of health from a
+        # gate that checked nothing, while everyone believes it is on. Loading is this function's
+        # domain, so the floor lives here and not in reconcile(), which owns reconciliation and is
+        # legitimately handed an empty table by callers isolating the ledger.
+        if not table:
+            print("gyroscope: 0 clauses loaded from "
+                  f"{C.default_dir()} -- NOT-EVALUABLE, nothing was checked", file=sys.stderr)
+            if event.get("hook_event_name") in ("Stop", "SubagentStop"):
+                print(json.dumps(_block(
+                    "gyroscope loaded 0 clauses -- NOT-EVALUABLE, not a pass. Nothing was checked "
+                    "this session, so this is not a clean run.")))
+                return 0
+        out = HANDLERS.get(event.get("hook_event_name"), pre_tool_use)(table, Ledger(), event)
+    except Exception as exc:
+        print(f"gyroscope: {type(exc).__name__} -- NOT-EVALUABLE, failing closed", file=sys.stderr)
+        out = _closed_not_evaluable(event, type(exc).__name__)
+        if out is None:
+            print("{}")
+            return 0
+    try:
+        encoded = json.dumps(out)
+    except Exception as exc:
+        print(f"gyroscope: {type(exc).__name__} while serializing -- NOT-EVALUABLE, failing closed",
+              file=sys.stderr)
+        closed = _closed_not_evaluable(event, f"serialization {type(exc).__name__}")
+        if closed is None:
+            print("{}")
+            return 0
+        encoded = json.dumps(closed)
+    print(encoded)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,80 @@
+{
+  "_provenance": {
+    "as_of": "sha256:78e84e3333284c96",
+    "live_source_of_truth": "plugin/clauses/",
+    "recompute_with": "python3 -m gyroscope.generate"
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.sh",
+            "timeout": 20,
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash|Read"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.sh",
+            "timeout": 20,
+            "type": "command"
+          }
+        ],
+        "matcher": "Agent|AskUserQuestion|Bash|ExitPlanMode|Glob|Grep|Read|Task"
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.sh",
+            "timeout": 20,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.sh",
+            "timeout": 20,
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.sh",
+            "timeout": 20,
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/dispatch.sh",
+            "timeout": 20,
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ]
+  }
+}

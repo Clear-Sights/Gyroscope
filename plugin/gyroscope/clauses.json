@@ -1,0 +1,1028 @@
+[
+  {
+    "id": "A01",
+    "event": "PreToolUse",
+    "tools": [
+      "Bash"
+    ],
+    "occasion": "A push is about to publish local commits whose landing nobody has checked.",
+    "costly": "push without knowing what is staged or which branch is current",
+    "guard": "run `git status` first",
+    "subject": "session_id",
+    "fingerprint": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "(^|&&|;|\\|)\\s*git\\s+push\\b"
+    },
+    "discharged_by": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "(^|&&|;|\\|)\\s*git\\s+status\\b"
+    },
+    "window": "session",
+    "deny_reason": "push with no `git status` on record this session; run `git status` first",
+    "fixtures_pos": [
+      "git push -u origin main",
+      "git add -A && git push"
+    ],
+    "fixtures_neg": [
+      "git status --short",
+      "git log --oneline -3",
+      "git diff --cached",
+      "gh pr view 6"
+    ]
+  },
+  {
+    "id": "A02",
+    "event": "PreToolUse",
+    "tools": [
+      "Bash"
+    ],
+    "occasion": "A recursive or bulk delete is about to run over a set nobody has enumerated.",
+    "costly": "delete a set whose members were never listed, so the loss leaves no record of what it was",
+    "guard": "list the set first (`ls`, `find` without -delete, or `git status`)",
+    "subject": {
+      "on": "tool_input.command",
+      "pattern": "([\\w./-]+/)",
+      "group": 1
+    },
+    "fingerprint": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "(?:^|[;&|]\\s*)\\s*(rm\\s+(-[a-zA-Z]*r[a-zA-Z]*f|-[a-zA-Z]*f[a-zA-Z]*r)\\b|find\\b[^|;]*-delete\\b|git\\s+clean\\b[^|;]*-[a-zA-Z]*f)"
+    },
+    "discharged_by": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "(^|&&|;|\\|)\\s*(ls\\b|find\\b|git\\s+status\\b|du\\b)",
+      "unless": [
+        "(^|&&|;|\\|)\\s*find\\b[^|;]*-delete"
+      ]
+    },
+    "window": "session",
+    "deny_reason": "bulk delete with nothing listed first; run `ls` or `find` (without -delete) so the loss has a record",
+    "fixtures_pos": [
+      "rm -rf build/",
+      "find . -name '*.tmp' -delete",
+      "git clean -fd"
+    ],
+    "fixtures_neg": [
+      "ls -la build/",
+      "find . -name '*.tmp'",
+      "rm single-file.txt",
+      "git status --short"
+    ]
+  },
+  {
+    "id": "A03",
+    "event": "PreToolUse",
+    "tools": [
+      "Bash"
+    ],
+    "occasion": "A force-push is about to overwrite a remote ref whose current tip was never fetched.",
+    "costly": "overwrite remote history that was never read, discarding commits with no local copy",
+    "guard": "fetch the ref first (`git fetch`)",
+    "subject": {
+      "on": "tool_input.command",
+      "pattern": "(?:git\\s+(?:push|fetch)\\b[^|;]*\\s)([\\w./-]+)\\s*$",
+      "group": 1
+    },
+    "fingerprint": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "(?:^|[;&|]\\s*)\\s*git\\s+push\\b[^|;]*(--force|\\s-f\\b)",
+      "unless": [
+        "(?:^|[;&|]\\s*)\\s*git\\s+push\\b[^|;]*--force-with-lease"
+      ]
+    },
+    "discharged_by": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "(^|&&|;|\\|)\\s*git\\s+fetch\\b"
+    },
+    "window": "session",
+    "deny_reason": "force-push without a prior `git fetch`; fetch first, or use --force-with-lease which carries its own check",
+    "fixtures_pos": [
+      "git push --force origin main",
+      "git push -f origin feature"
+    ],
+    "fixtures_neg": [
+      "git push --force-with-lease origin main",
+      "git fetch origin main",
+      "git push origin main"
+    ],
+    "_quarantine_reason": "NOT-EVALUABLE on the frozen corpus: zero force-pushes in 4401 calls, so the clause has no measured denominator and, per this repository's own rule, absence is never a pass. A guard nobody was ever observed to need cannot show it is discharged by real work.",
+    "_conservation": {
+      "requirement": "a retired row names a canonical successor with evidence and a reason; the clause is conserved verbatim in quarantine, never deleted, so the reason it existed can be re-examined",
+      "successor": "A01 and T02 (live in the table)",
+      "successor_contract": "A01 gates push itself on the same corpus surface (22 evaluated, 0 fp) and T02 requires the landing of any push to be verified by fetch/ls-remote before the run may end. The force-push-specific residue -- overwriting a never-fetched remote tip -- also remains repriced by the fingerprint's own carve-out: --force-with-lease was always exempt, and it is the form that encodes the fetch.",
+      "status": "quarantined NOT-EVALUABLE; conserved verbatim"
+    },
+    "_quarantine_evidence": {
+      "corpus": "corpus/frozen/MANIFEST.json digest c1d98edf67c287a36a8748614790e696e656575caaf5fe43ea9ce9e6ea2d4fb0, 4401 calls, one session",
+      "evaluated": 0,
+      "denied": 0,
+      "candidate_fp": 0,
+      "fp_rate": "N/A (evaluated: 0)",
+      "revisit_if": "a frozen corpus containing a force-push is admitted; restore and measure before trusting"
+    },
+    "expect_unobserved": "a force-push overwriting an unfetched remote ref is a release-day act; an ordinary session does not perform one, and the corpus is ordinary sessions."
+  },
+  {
+    "id": "C03-verify-what-returns",
+    "event": "Stop",
+    "tools": [
+      "*"
+    ],
+    "occasion": "the run is ending after delegated work returned and before any returned artifact was read",
+    "costly": "end the run by inheriting delegated work without inspecting what came back",
+    "guard": "read a returned artifact after dispatch and before stopping",
+    "subject": "session_id",
+    "fingerprint": {
+      "kind": "always"
+    },
+    "discharged_by": {
+      "kind": "regex",
+      "on": "tool_name",
+      "pattern": "^Read$"
+    },
+    "window": "session",
+    "deny_reason": "ending after delegated work with no artifact read on record; use Read to inspect what returned before accepting it",
+    "fixtures_pos": [
+      "Read"
+    ],
+    "fixtures_neg": [
+      "Glob",
+      "Grep",
+      "Agent",
+      "Task"
+    ],
+    "_fixture_note": "terminal clause: fixtures validate discharged_by, since the fingerprint is always",
+    "activated_by": {
+      "kind": "regex",
+      "on": "tool_name",
+      "pattern": "^(Agent|Task)$"
+    },
+    "fixtures_activate": [
+      "Agent",
+      "Task"
+    ],
+    "_note": "Admission test: a delegated result is inherited as finished work by default. If nobody inspects it, later work is built on an unverified artifact and the missing observation cannot be reconstructed after the session ends; healing requires discarding the inherited result and restarting the work, path (3). The verdict row warns that a broad Read/Glob/Grep discharge can license one unit with activity about another. Tool-name events expose no shared unit or artifact operand, so an extractor would abstain rather than protect; this clause tightens the observable guard to an actual Read and activates only after dispatch. The remaining session-level approximation is admitted only if the frozen-corpus measurement reports no candidate false positives and its terminal firing rate stays below HIGH_INTERRUPT."
+  },
+  {
+    "id": "C08-check-can-fail",
+    "event": "Stop",
+    "tools": [
+      "Bash"
+    ],
+    "occasion": "a checker invocation is run and its PASS may later be cited as licensing evidence",
+    "costly": "accepting a checker PASS that has never demonstrated it can reject an invalid or absent input",
+    "guard": "observe a nonzero PostToolUse result from the same normalized checker invocation",
+    "subject": "session_id",
+    "fingerprint": {
+      "kind": "always"
+    },
+    "activated_by": {
+      "kind": "regex",
+      "event": "PreToolUse",
+      "tools": [
+        "Bash"
+      ],
+      "on": "tool_input.command",
+      "scope": "segment",
+      "pattern": "(?:^|\\s)((?:(?:python(?:3(?:\\.\\d+)?)?\\s+-m\\s+)?(?:pytest|unittest)|(?:python(?:3(?:\\.\\d+)?)?\\s+)?(?:\\./)?[^\\s;&|]*(?:check|verify)[^\\s;&|]*\\.(?:py|sh)))(?=\\s|$)",
+      "key_from": {
+        "on": "tool_input.command",
+        "pattern": "(?:^|[;&|]\\s*)\\s*((?:(?:python(?:3(?:\\.\\d+)?)?\\s+-m\\s+)?(?:pytest|unittest)|(?:python(?:3(?:\\.\\d+)?)?\\s+)?(?:\\./)?[^\\s;&|]*(?:check|verify)[^\\s;&|]*\\.(?:py|sh)))(?=\\s|$)",
+        "group": 1
+      }
+    },
+    "fixtures_activate": [
+      "pytest -q",
+      "python3 -m unittest tests.test_engine",
+      "python3 tools/check_schema.py"
+    ],
+    "discharged_by": {
+      "kind": "nonzero",
+      "event": "PostToolUse",
+      "tools": [
+        "Bash"
+      ],
+      "on": "tool_response.exit_code",
+      "key_from": {
+        "on": "tool_input.command",
+        "pattern": "(?:^|[;&|]\\s*)\\s*((?:(?:python(?:3(?:\\.\\d+)?)?\\s+-m\\s+)?(?:pytest|unittest)|(?:python(?:3(?:\\.\\d+)?)?\\s+)?(?:\\./)?[^\\s;&|]*(?:check|verify)[^\\s;&|]*\\.(?:py|sh)))(?=\\s|$)",
+        "group": 1
+      }
+    },
+    "window": "session, per normalized checker key",
+    "deny_reason": "checker PASS lacks a recorded failing run for this same checker; plant/remove an input and run this checker until it returns nonzero before citing PASS",
+    "fixtures_pos": [
+      1,
+      "2"
+    ],
+    "fixtures_neg": [
+      0,
+      "0"
+    ],
+    "expect_unobserved": "the frozen corpus contains no explicit pytest/unittest or named *check*/verify script activation paired with observable PostToolUse outcome events; this keyed terminal occasion is therefore expected to have evaluated: 0, which is NOT-EVALUABLE rather than evidence of absence.",
+    "_fixture_note": "terminal keyed clause: fixtures_pos/neg validate the PostToolUse nonzero guard; fixtures_activate validate checker recognition",
+    "_note": "Individual admission decision: a checker that accepts missing or invalid input produces the same green result as a sound checker, so doing nothing preserves a false licensing fact and downstream work consumes the opportunity to distinguish them. Recovery requires reversing the accepted PASS, planting or removing input, and replaying the checker decision path (restart path 3). The occasion is narrowed to explicit pytest/unittest runners and named *check*/verify Python or shell scripts. Each PreToolUse activation records the normalized checker command as its own obligation; only a nonzero PostToolUse for the equal key discharges it. Admit only if the frozen corpus reports candidate_fp=0 and TABLE_SUM remains below 20 per 1000."
+  },
+  {
+    "id": "C09-checker-excludes-self",
+    "event": "PreToolUse",
+    "tools": [
+      "Bash"
+    ],
+    "occasion": "the trace is about to infer process presence from a ps pipeline whose checker can appear in its own result",
+    "costly": "count or trust a grep-shaped process match without excluding the observer identity",
+    "guard": "run a process listing filtered by the shell or checker PID before trusting the match",
+    "subject": "session_id",
+    "fingerprint": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "(?:^|[;&|]\\s*)\\s*ps\\b[^;\\n]*\\|\\s*(?:grep|rg)\\b"
+    },
+    "discharged_by": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "(?:ps\\b[^;\\n]*\\|[^;\\n]*(?:grep|rg)\\b[^;\\n]*(?:-v|--invert-match)[^;\\n]*(?:\\$\\$|\\$BASHPID|self_pid|SELF_PID)|ps\\b[^;\\n]*\\|[^;\\n]*awk\\b[^;\\n]*(?:\\$\\$|\\$BASHPID|self_pid|SELF_PID)[^;\\n]*(?:!=|!~))"
+    },
+    "window": "session",
+    "deny_reason": "trust a ps pipeline that can match its own checker; first filter the listing with grep -v/rg --invert-match or awk using $$, $BASHPID, or an explicit self_pid",
+    "fixtures_pos": [
+      "ps aux | grep worker",
+      "ps -ef | rg queue-runner",
+      "ps ax | grep node | wc -l"
+    ],
+    "fixtures_neg": [
+      "pgrep -af worker",
+      "pkill -f stale-worker",
+      "ps -eo pid,comm | awk -v self_pid=$$ '$1 != self_pid'",
+      "systemctl is-active worker.service"
+    ],
+    "_note": "Admission test: a checker included in its own observation can create a stable false-positive process count. That apparent presence is then used as fact, and repeated checks reproduce the same observer contamination; doing nothing never reveals the absent target. Recovery requires interrupting the accepted result and rerunning from a correctly separated observer, effectively restarting the decision path (3). The verdict's broad pgrep/pkill/killall branch is narrowed away because it does not require a grep process in a ps pipeline and would interrupt ordinary process operations unrelated to self-inclusion. The remaining fingerprint names the concrete self-match surface, while the guard requires an identity-bearing inverted filter rather than a name-only grep trick."
+  },
+  {
+    "id": "D01",
+    "event": "PreToolUse",
+    "tools": [
+      "Agent",
+      "Task",
+      "Read",
+      "Glob",
+      "Grep"
+    ],
+    "occasion": "the trace is about to dispatch work to a subagent",
+    "costly": "fan out work with nothing probed first",
+    "guard": "probe the ground first with a read or a search, so the brief describes what is there",
+    "subject": "session_id",
+    "fingerprint": {
+      "kind": "regex",
+      "on": "tool_name",
+      "pattern": "^(Agent|Task)$"
+    },
+    "discharged_by": {
+      "kind": "regex",
+      "on": "tool_name",
+      "pattern": "^(Read|Glob|Grep)$"
+    },
+    "window": "session",
+    "deny_reason": "dispatch a subagent with no read, glob or grep on record; a brief written from assumption returns work built on it, and the result is inherited whole",
+    "fixtures_pos": [
+      "Agent",
+      "Task"
+    ],
+    "fixtures_neg": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Bash"
+    ],
+    "_note": "Measured hole: 52 Agent dispatches in one session, zero clauses. A subagent result is adopted as fact -- the built-upon shape. Citation contract: `cite the probe that preceded the dispatch`."
+  },
+  {
+    "id": "P01",
+    "event": "PreToolUse",
+    "tools": [
+      "ExitPlanMode",
+      "Read",
+      "Glob",
+      "Grep"
+    ],
+    "occasion": "the trace is about to present a plan for adoption",
+    "costly": "adopt a plan built on nothing read",
+    "guard": "read something first, so the plan describes this repository and not a remembered one",
+    "subject": "session_id",
+    "fingerprint": {
+      "kind": "regex",
+      "on": "tool_name",
+      "pattern": "^ExitPlanMode$"
+    },
+    "discharged_by": {
+      "kind": "regex",
+      "on": "tool_name",
+      "pattern": "^(Read|Glob|Grep)$"
+    },
+    "window": "session",
+    "deny_reason": "present a plan with no read, glob or grep on record; a plan is followed by default, so a plan built on assumption defines the whole path before anything is checked",
+    "fixtures_pos": [
+      "ExitPlanMode"
+    ],
+    "fixtures_neg": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Agent"
+    ],
+    "_note": "Measured hole: 29 ExitPlanMode calls in one session, zero clauses. A plan is the perfect asymmetry -- it defines the path and its end, and nobody decides to follow it."
+  },
+  {
+    "id": "P02",
+    "event": "PreToolUse",
+    "tools": [
+      "ExitPlanMode",
+      "AskUserQuestion"
+    ],
+    "occasion": "the trace is about to present a plan whose ambiguities were settled by guessing",
+    "costly": "adopt a plan built on a guessed reading of the request",
+    "guard": "ask one question about the ambiguity before the plan is fixed",
+    "subject": "session_id",
+    "fingerprint": {
+      "kind": "regex",
+      "on": "tool_name",
+      "pattern": "^ExitPlanMode$"
+    },
+    "discharged_by": {
+      "kind": "regex",
+      "on": "tool_name",
+      "pattern": "^AskUserQuestion$"
+    },
+    "window": "session",
+    "deny_reason": "present a plan with no question asked this session; reading files resolves what the repository is, never what was wanted, and a plan is followed by default",
+    "fixtures_pos": [
+      "ExitPlanMode"
+    ],
+    "fixtures_neg": [
+      "AskUserQuestion",
+      "Read",
+      "Glob",
+      "Grep"
+    ],
+    "_note": "P01 guards the same occasion and accepts Read/Glob/Grep as discharge, which answers a different question: reading establishes what the repository IS, not what was ASKED FOR. A plan can therefore be adopted having read forty files and asked nothing, and P01 counts it discharged. The two failure modes are independent -- a plan grounded in the tree can still be a plan for the wrong task -- so this is a separate clause rather than a widened P01. Against the admission test: left alone, a plan built on a guessed reading is FOLLOWED, because a plan's default is adoption and nothing in the run re-opens the interpretation. The state it leaves is work completed under the wrong goal, and that heals only by throwing the session away and starting over -- path (3), an ACTION, and the most expensive one. Its interruption cost is bounded by the occasion: ExitPlanMode is rare per session and one question discharges it for the whole session."
+  },
+  {
+    "id": "T01",
+    "event": "Stop",
+    "tools": [
+      "*"
+    ],
+    "occasion": "The run is ending. An ending that is incomplete but looks complete is what stops the work, so the tell must be checked before stopping, not after.",
+    "costly": "declare the run finished without ever asking the tree whether it is",
+    "guard": "run `git status` at least once this session",
+    "subject": "session_id",
+    "fingerprint": {
+      "kind": "always"
+    },
+    "discharged_by": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "(^|&&|;|\\|)\\s*git\\s+status\\b"
+    },
+    "window": "session",
+    "deny_reason": "ending with no `git status` on record: dirty is unfinished, and an ending nobody checked is the one that looks complete",
+    "fixtures_pos": [
+      "git status --short",
+      "git status"
+    ],
+    "fixtures_neg": [
+      "git commit -m done",
+      "git log --oneline -3"
+    ],
+    "_fixture_note": "terminal clause: fixtures validate discharged_by (the guard), since the fingerprint is `always`"
+  },
+  {
+    "id": "T02",
+    "event": "Stop",
+    "tools": [
+      "*"
+    ],
+    "occasion": "The run is ending after a push. A push that reported success and did not land defines an end that is false, and the report is not the landing.",
+    "costly": "end the run treating a push report as a landing",
+    "guard": "fetch or `git ls-remote` the ref after pushing",
+    "subject": "session_id",
+    "fingerprint": {
+      "kind": "always"
+    },
+    "discharged_by": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "git\\s+(ls-remote|fetch)\\b"
+    },
+    "window": "session",
+    "deny_reason": "ending with no fetch or ls-remote on record: a push report is not proof it landed",
+    "fixtures_pos": [
+      "git ls-remote origin refs/heads/main",
+      "git fetch origin main"
+    ],
+    "fixtures_neg": [
+      "git push -u origin main",
+      "git commit -m done"
+    ],
+    "_fixture_note": "terminal clause: fixtures validate discharged_by (the guard), since the fingerprint is `always`",
+    "activated_by": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "(?:^|[;&|]\\s*)\\s*git\\s+push\\b"
+    },
+    "_activation": "A terminal demand with fingerprint `always` fires at every Stop, so a read-only session that never pushed was asked for a fetch it had no reason to run -- a firing-rate cost on every session end, measured: reconcile([T02], empty ledger, read-only Stop) returned decision=block. `activated_by` makes the demand CONDITIONAL on an observed push, which is the deferred-demand shape this clause needed. Quarantining T02 instead was declined: a false block costs one cheap fetch, while losing the landing check costs an unverified push, and only the second is unrecoverable.",
+    "fixtures_activate": [
+      "git push -u origin main",
+      "cd /x && git push"
+    ]
+  },
+  {
+    "id": "U01",
+    "event": "PreToolUse",
+    "tools": [
+      "Bash"
+    ],
+    "occasion": "the trace is about to launch a nested worker",
+    "costly": "launch a nested worker",
+    "guard": "run `python3 tools/probe_child_capability.py --writable-home --response-transport --result-write`",
+    "subject": "session_id",
+    "fingerprint": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "(?:^|[;&|]\\s*)/?(?:tmp/sect/run/)?dispatch\\.sh\\b"
+    },
+    "discharged_by": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "\\bpython3?\\b[^\\n]*(?:probe_child_capability\\.py)[^\\n]*--writable-home[^\\n]*--response-transport[^\\n]*--result-write\\b"
+    },
+    "window": "session",
+    "deny_reason": "launch a nested worker without its guard; run `python3 tools/probe_child_capability.py --writable-home --response-transport --result-write`",
+    "fixtures_pos": [
+      "/tmp/sect/run/dispatch.sh unit-a luna brief-a.txt",
+      "dispatch.sh unit-b luna brief-b.txt"
+    ],
+    "fixtures_neg": [
+      "python3 tools/probe_child_capability.py --writable-home --response-transport --result-write",
+      "pytest -q"
+    ],
+    "_quarantine_reason": "NOT-EVALUABLE on the frozen corpus: the fingerprint (dispatch.sh nested-worker launch) matched 0 of 4401 calls, and the demanded guard names tools/probe_child_capability.py, a file this repository does not ship. No measured denominator; absence is never a pass.",
+    "_conservation": {
+      "requirement": "a retired row names a canonical successor with evidence and a reason; the clause is conserved verbatim in quarantine, never deleted, so the reason it existed can be re-examined",
+      "successor": "D01 (live in the table)",
+      "successor_contract": "D01 gates the fan-out surface this corpus actually uses -- Agent dispatch -- on probe-before-dispatch, and carries the corpus's single true positive. The nested-worker occasion, if it returns, is the same shape: probe the child's capability before spending the dispatch.",
+      "status": "quarantined NOT-EVALUABLE; conserved verbatim"
+    },
+    "_quarantine_evidence": {
+      "corpus": "corpus/frozen/MANIFEST.json digest c1d98edf67c287a36a8748614790e696e656575caaf5fe43ea9ce9e6ea2d4fb0, 4401 calls, one session",
+      "evaluated": 0,
+      "denied": 0,
+      "candidate_fp": 0,
+      "fp_rate": "N/A (evaluated: 0)",
+      "revisit_if": "a corpus containing dispatch.sh worker launches is admitted"
+    },
+    "expect_unobserved": "launching a nested worker is not part of ordinary editing; it appears only in fan-out sessions, of which this corpus has none."
+  },
+  {
+    "id": "U02",
+    "event": "PreToolUse",
+    "tools": [
+      "Bash"
+    ],
+    "occasion": "the trace is about to re-launch a nested-worker target",
+    "costly": "re-launch a nested-worker target",
+    "guard": "run `python3 tools/probe_child_capability.py --target TARGET --after-failure --require-change`",
+    "subject": {
+      "on": "tool_input.command",
+      "pattern": "(?:dispatch\\.sh|--target)\\s+([A-Za-z0-9][\\w.-]*)\\b",
+      "group": 1
+    },
+    "fingerprint": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "(?:^|[;&|]\\s*)/?(?:tmp/sect/run/)?dispatch\\.sh\\s+[A-Za-z0-9][\\w.-]*\\b"
+    },
+    "discharged_by": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "\\bpython3?\\b[^\\n]*probe_child_capability\\.py[^\\n]*--target\\s+\\S+[^\\n]*--after-failure[^\\n]*--require-change\\b"
+    },
+    "window": "session",
+    "deny_reason": "re-launch a nested-worker target without its guard; run `python3 tools/probe_child_capability.py --target TARGET --after-failure --require-change`",
+    "fixtures_pos": [
+      "/tmp/sect/run/dispatch.sh unit-a luna brief-a.txt",
+      "dispatch.sh unit-b luna brief-b.txt"
+    ],
+    "fixtures_neg": [
+      "python3 tools/probe_child_capability.py --target unit-a --after-failure --require-change",
+      "python3 -m pytest -q"
+    ],
+    "_quarantine_reason": "NOT-EVALUABLE on the frozen corpus: the fingerprint (dispatch.sh re-launch) matched 0 of 4401 calls, and the guard names tools/probe_child_capability.py, which this repository does not ship. No measured denominator; absence is never a pass.",
+    "_conservation": {
+      "requirement": "a retired row names a canonical successor with evidence and a reason; the clause is conserved verbatim in quarantine, never deleted, so the reason it existed can be re-examined",
+      "successor": "D01 (live in the table)",
+      "successor_contract": "Same surface as U01: D01 holds probe-before-dispatch for the fan-out mechanism the corpus exercises. Re-launch-after-failure, if the occasion returns, is D01's shape with a stricter precondition.",
+      "status": "quarantined NOT-EVALUABLE; conserved verbatim"
+    },
+    "_quarantine_evidence": {
+      "corpus": "corpus/frozen/MANIFEST.json digest c1d98edf67c287a36a8748614790e696e656575caaf5fe43ea9ce9e6ea2d4fb0, 4401 calls, one session",
+      "evaluated": 0,
+      "denied": 0,
+      "candidate_fp": 0,
+      "fp_rate": "N/A (evaluated: 0)",
+      "revisit_if": "a corpus containing dispatch.sh worker re-launches is admitted"
+    },
+    "expect_unobserved": "re-launching a nested worker after a failure is strictly rarer than U01, which is itself unobserved here."
+  },
+  {
+    "id": "U03",
+    "event": "PreToolUse",
+    "tools": [
+      "Bash"
+    ],
+    "occasion": "the trace is about to use a PID in a signal operation",
+    "costly": "use a PID in a signal operation",
+    "guard": "run `ps`, `pgrep`, or an equivalent observer-namespace process listing",
+    "subject": "session_id",
+    "fingerprint": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "(?:^|[;&|]\\s*)\\s*(?:sudo\\s+)?(?:kill(?:all)?|pkill)\\b"
+    },
+    "discharged_by": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "(?:^|[;&|]\\s*)\\s*(?:ps\\b|pgrep\\b)"
+    },
+    "window": "session",
+    "deny_reason": "use a PID in a signal operation without its guard; run `ps`, `pgrep`, or an equivalent observer-namespace process listing",
+    "fixtures_pos": [
+      "kill 4242",
+      "pkill -TERM worker"
+    ],
+    "fixtures_neg": [
+      "ps -ef",
+      "pgrep -af worker"
+    ]
+  },
+  {
+    "id": "U06",
+    "event": "PreToolUse",
+    "tools": [
+      "Bash"
+    ],
+    "occasion": "the trace is about to send a mutating request to an external service",
+    "costly": "send a mutating request to an external service",
+    "guard": "run an authenticated read canary such as `curl ... -H 'Authorization: ...'`",
+    "subject": {
+      "on": "tool_input.command",
+      "pattern": "https?://([^/\\s]+)",
+      "group": 1
+    },
+    "fingerprint": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "(?:^|[;&|]\\s*)\\s*curl\\b[^\\n]*(?:-X|--request)\\s*(?:POST|PUT|PATCH|DELETE)\\b"
+    },
+    "discharged_by": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "\\bcurl\\b[^\\n]*(?:-H|--header)\\s+[\"']?Authorization:"
+    },
+    "window": "session",
+    "deny_reason": "send a mutating request to an external service without its guard; run an authenticated read canary such as `curl ... -H 'Authorization: ...'`",
+    "fixtures_pos": [
+      "curl -X POST https://api.example.test/jobs -d @job.json",
+      "curl --request DELETE https://api.example.test/items/7"
+    ],
+    "fixtures_neg": [
+      "curl -H 'Authorization: Bearer token' https://api.example.test/me",
+      "curl -I https://example.test"
+    ],
+    "_quarantine_reason": "NOT-EVALUABLE on the frozen corpus: zero mutating curl requests (-X POST/PUT/PATCH/DELETE) in 4401 calls. No measured denominator; absence is never a pass. tools/register_gate.py already records U06 in EXPECTED_EXCLUDED as having failed the hardened admissibility audit.",
+    "_conservation": {
+      "requirement": "a retired row names a canonical successor with evidence and a reason; the clause is conserved verbatim in quarantine, never deleted, so the reason it existed can be re-examined",
+      "successor": "U06 itself, conserved verbatim here",
+      "successor_contract": "No live clause covers a mutating external request, and none can claim to until a corpus contains one -- naming a live successor would assert conservation nothing measured. The clause is held whole in quarantine so restoring it is a file move, not a reconstruction.",
+      "status": "quarantined NOT-EVALUABLE; awaiting an evaluable corpus"
+    },
+    "_quarantine_evidence": {
+      "corpus": "corpus/frozen/MANIFEST.json digest c1d98edf67c287a36a8748614790e696e656575caaf5fe43ea9ce9e6ea2d4fb0, 4401 calls, one session",
+      "evaluated": 0,
+      "denied": 0,
+      "candidate_fp": 0,
+      "fp_rate": "N/A (evaluated: 0)",
+      "revisit_if": "a frozen corpus containing a mutating external request is admitted"
+    },
+    "expect_unobserved": "a mutating request to an external service leaves the repository entirely; the corpus records tool calls, and most sessions never make one."
+  },
+  {
+    "id": "U08",
+    "event": "PreToolUse",
+    "tools": [
+      "Bash"
+    ],
+    "occasion": "the trace is about to create a signed git commit",
+    "costly": "create a signed git commit",
+    "guard": "run a signer canary such as `printf test | gpg --clearsign`",
+    "subject": "session_id",
+    "fingerprint": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "(?:^|[;&|]\\s*)\\s*git\\s+commit\\b[^\\n]*(?:\\s-S(?:\\s|$)|--gpg-sign\\b)"
+    },
+    "discharged_by": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "(?:^|[;&|]\\s*)\\s*(?:printf\\b[^\\n]*\\|\\s*gpg\\s+--clearsign\\b|gpg\\s+--detach-sign\\b)"
+    },
+    "window": "session",
+    "deny_reason": "create a signed git commit without its guard; run a signer canary such as `printf test | gpg --clearsign`",
+    "fixtures_pos": [
+      "git commit -S -m 'release'",
+      "git commit --gpg-sign=ABC123 -m release"
+    ],
+    "fixtures_neg": [
+      "printf test | gpg --clearsign",
+      "git status --short"
+    ],
+    "_quarantine_reason": "NOT-EVALUABLE on the frozen corpus: zero signed commits (git commit -S/--gpg-sign) in 4401 calls. No measured denominator; absence is never a pass.",
+    "_conservation": {
+      "requirement": "a retired row names a canonical successor with evidence and a reason; the clause is conserved verbatim in quarantine, never deleted, so the reason it existed can be re-examined",
+      "successor": "git's own signing path (host guarantee, outside the table)",
+      "successor_contract": "git commit -S fails loudly and creates NO commit when the signer cannot sign; the state left by a failed signature heals by correction with the error on screen. The residue -- a signer that signs wrongly but successfully -- was never what the canary guard could detect either.",
+      "status": "quarantined NOT-EVALUABLE; conserved verbatim"
+    },
+    "_quarantine_evidence": {
+      "corpus": "corpus/frozen/MANIFEST.json digest c1d98edf67c287a36a8748614790e696e656575caaf5fe43ea9ce9e6ea2d4fb0, 4401 calls, one session",
+      "evaluated": 0,
+      "denied": 0,
+      "candidate_fp": 0,
+      "fp_rate": "N/A (evaluated: 0)",
+      "revisit_if": "a corpus containing signed commits is admitted"
+    },
+    "expect_unobserved": "signed commits require a configured signer; sessions on hosts without one never attempt the act at all."
+  },
+  {
+    "id": "U09",
+    "event": "PreToolUse",
+    "tools": [
+      "Bash"
+    ],
+    "occasion": "the trace is about to switch or check out a git ref",
+    "costly": "switch or check out a git ref",
+    "guard": "know the ref exists: `git rev-parse --verify REF`, or have created it yourself with `git checkout -b/-B REF` or `git branch REF`",
+    "subject": {
+      "on": "tool_input.command",
+      "pattern": "git\\s+(?:(?:checkout|switch)\\s+(?:-[\\w-]+\\s+)*|rev-parse\\b[^\\n]*--verify\\s+|branch\\s+)([\\w./-]+)",
+      "group": 1
+    },
+    "fingerprint": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "(?:^|[;&|]\\s*)\\s*git\\s+(?:switch|checkout)\\s+[\\w./-]+\\b",
+      "unless": [
+        "(?:^|[;&|]\\s*)\\s*git\\s+(?:switch|checkout)\\s+-(?:q|b|B)(?:\\s|$)",
+        "(?:^|[;&|]\\s*)\\s*git\\s+checkout\\s+[\\w./-]*\\.[A-Za-z][A-Za-z0-9]{0,9}(?:\\s|[;&|]|$)"
+      ]
+    },
+    "discharged_by": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "(?:^|[;&|]\\s*)\\s*git\\s+(?:rev-parse\\b[^\\n]*--verify\\b|(?:checkout|switch)\\s+(?:-q\\s+)?-[bB]\\s|branch\\s+[\\w./-]+)"
+    },
+    "window": "session",
+    "deny_reason": "switch or check out a git ref that was never verified or created this session; run `git rev-parse --verify REF`, or create it with `git checkout -b/-B REF`",
+    "_natural_guard": "Creating a ref is discharged by work someone actually does: `git checkout -B REF origin/main` is how a session makes the branch it later returns to, and creation is the strongest possible proof the ref exists. Measured on the frozen corpus: the sole U09 denial checked out `claude/gyroscope-terminal-clauses`, a branch the same session had created 12 calls earlier with `git checkout -B` -- the guard was already run, under a name the old discharged_by refused to see. `git rev-parse --verify` remains the explicit probe for refs the session did not make.",
+    "fixtures_pos": [
+      "git checkout feature/api",
+      "git switch release",
+      "git checkout -f",
+      "git checkout --force"
+    ],
+    "fixtures_neg": [
+      "git rev-parse --verify feature/api",
+      "git status --short",
+      "git checkout -q FETCH_HEAD",
+      "git checkout -q main",
+      "git checkout -q -b _basecheck origin/main",
+      "git checkout -q claude/position-md-branch-updates-2il5eh",
+      "git checkout -q -b claude/gyroscope-plugin-2il5eh",
+      "git checkout -q claude/gyroscope-plugin-2il5eh",
+      "git checkout -q -B claude/gyroscope-plugin-2il5eh origin/main",
+      "git checkout -q c196de8",
+      "git checkout -B claude/gyroscope-terminal-clauses origin/main",
+      "git checkout -B claude/position-md-branch-updates-2il5eh origin/main",
+      "git checkout docs/gyroscope-plan.md"
+    ]
+  },
+  {
+    "id": "U10",
+    "event": "PreToolUse",
+    "tools": [
+      "Bash"
+    ],
+    "occasion": "the trace is about to traverse structured JSON data",
+    "costly": "traverse structured JSON data",
+    "guard": "look at the structure first: `jq 'keys'`, `jq 'type'`, `jq -e 'has(...)'`, or any jq structure assertion on the same file",
+    "subject": {
+      "on": "tool_input.command",
+      "pattern": "\\s([\\w./-]+\\.json)\\s*$",
+      "group": 1
+    },
+    "fingerprint": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "(?:^|[;&|]\\s*)\\s*jq\\b[^\\n]*(?:\\.[A-Za-z_][\\w]*|\\[)",
+      "unless": [
+        "(?:^|[;&|]\\s*)\\s*jq\\b[^\\n]*\\s-e\\b"
+      ]
+    },
+    "discharged_by": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "(?:^|[;&|]\\s*)\\s*jq\\b[^\\n]*(?:\\s-e\\b|\\bkeys\\b|\\btype\\b|\\bhas\\s*\\()"
+    },
+    "window": "session",
+    "deny_reason": "traverse structured JSON whose structure was never once looked at; run `jq 'keys'`, `jq 'type'`, or a `jq -e` type/key assertion on the file first",
+    "fixtures_pos": [
+      "jq '.items[0].name' response.json",
+      "jq '.user.email' payload.json"
+    ],
+    "fixtures_neg": [
+      "jq -e 'type == \"object\" and has(\"items\")' response.json",
+      "python3 -m json.tool response.json"
+    ],
+    "_natural_guard": "The old guard demanded specifically `jq -e` with a type/has assertion -- a ritual observed 0 times in 2152 real Bash calls. The observation people actually make before traversing a JSON file is `jq 'keys'` or `jq 'type'` on it: measured on the frozen corpus, the session ran `jq 'keys' FILE` before every per-file traversal chain (e.g. call 2100 `jq 'keys' calibration_preregistered.json` precedes 2104 `jq 'del(.tasks)'` on the same file). That look is the guard -- it answers the same question (what shape is this document) and is discharged by work that is already part of the job. `jq -e` still discharges."
+  },
+  {
+    "id": "U12",
+    "event": "PreToolUse",
+    "tools": [
+      "Bash"
+    ],
+    "occasion": "the trace is about to apply a patch",
+    "costly": "apply a patch",
+    "guard": "run `rg`/`grep` for the patch context and read the target immediately before applying",
+    "subject": "session_id",
+    "fingerprint": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "(?:^|[;&|]\\s*)\\s*(?:git\\s+apply|patch\\s+-p\\d+)\\b"
+    },
+    "discharged_by": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "(?:^|[;&|]\\s*)\\s*(?:rg|grep)\\b"
+    },
+    "window": "session",
+    "deny_reason": "apply a patch without its guard; run `rg`/`grep` for the patch context and read the target immediately before applying",
+    "fixtures_pos": [
+      "git apply fix.patch",
+      "patch -p1 < fix.patch"
+    ],
+    "fixtures_neg": [
+      "rg -n -F 'def target(' src/app.py",
+      "sed -n '40,80p' src/app.py"
+    ],
+    "_quarantine_reason": "NOT-EVALUABLE on the frozen corpus: zero real patch applications in 4401 calls. The single fingerprint-shaped call (call 165) is prose -- a python heredoc quoting `patch -p` -- and it contains its own grep, so the dispatcher scores it as guard-then-act and it never enters the denominator. Searched the corpus for `git apply` and `patch -pN` at segment starts: the heredoc is the only hit. No measured denominator; absence is never a pass.",
+    "_conservation": {
+      "requirement": "a retired row names a canonical successor with evidence and a reason; the clause is conserved verbatim in quarantine, never deleted, so the reason it existed can be re-examined",
+      "successor": "U12 itself, conserved verbatim here",
+      "successor_contract": "No live clause gates patch application, and none can claim measured conservation until a corpus contains a real one. The clause is held whole so restoration is a file move. Its guard (rg/grep of the patch context) was the natural-guard pattern and stays recorded here as the shape to restore.",
+      "status": "quarantined NOT-EVALUABLE; awaiting an evaluable corpus"
+    },
+    "_quarantine_evidence": {
+      "corpus": "corpus/frozen/MANIFEST.json digest c1d98edf67c287a36a8748614790e696e656575caaf5fe43ea9ce9e6ea2d4fb0, 4401 calls, one session",
+      "evaluated": 0,
+      "denied": 0,
+      "candidate_fp": 0,
+      "fp_rate": "N/A (evaluated: 0)",
+      "revisit_if": "a frozen corpus containing a real git apply / patch invocation is admitted"
+    },
+    "expect_unobserved": "applying a patch is an occasional integration act; a session that edits files directly never reaches it."
+  },
+  {
+    "id": "U13",
+    "event": "PreToolUse",
+    "tools": [
+      "Bash"
+    ],
+    "occasion": "the trace is about to apply a generated patch",
+    "costly": "apply a generated patch",
+    "guard": "run `git apply --check PATCH` first",
+    "subject": {
+      "on": "tool_input.command",
+      "pattern": "([\\w./-]+\\.(?:patch|diff))\\b",
+      "group": 1
+    },
+    "fingerprint": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "scope": "segment",
+      "pattern": "^\\s*(?:git\\s+apply|patch\\s+-p\\d+)\\b[^\\n]*?(?:\"[\\w./-]+\\.(?:patch|diff)\"|'[\\w./-]+\\.(?:patch|diff)'|[\\w./-]+\\.(?:patch|diff)\\b)",
+      "unless": [
+        "^\\s*git\\s+apply\\b[^\\n]*--check\\b"
+      ]
+    },
+    "discharged_by": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "(?:^|[;&|]\\s*)\\s*git\\s+apply\\b[^\\n]*--check\\b"
+    },
+    "window": "session",
+    "deny_reason": "apply a generated patch without its guard; run `git apply --check PATCH` first",
+    "fixtures_pos": [
+      "git apply generated.patch",
+      "git apply generated.diff --index",
+      "patch -p1 < generated.patch"
+    ],
+    "fixtures_neg": [
+      "git apply --check generated.patch",
+      "git diff --check",
+      "cd /tmp/verify\npython3 - <<'PY'\nimport sys; sys.path.insert(0,'bench')\nimport admissibility as a\npairs = {\n \"U05\": ('test -w \"$(git rev-parse --git-path FETCH_HEAD)\"; git fetch origin', 'git fetch origin'),\n \"U06\": ('gh api user; gh pr view 123', 'gh pr view 123'),\n \"U12\": (\"sed -n '42p' file.py; rg -c 'target' file.py; test $(rg -c 'target' file.py) -eq 1; git apply change.patch\",\n         'git apply change.patch'),\n \"U19\": ('python3 rewrite_crlf.py; python3 -m unittest tests.test_preservation', 'python3 rewrite_crlf.py'),\n}\nprint(\"witness_overlap verdict under the CURRENT checker (subset rule removed):\")\nfor cid,(s,v) in pairs.items():\n    err = a.witness_overlap(s, v)\n    print(f\"  {cid}: {'ADMISSIBLE (no overlap finding)' if not err else 'REJECTED: '+err}\")\nprint()\nprint(\"valid_witness (both arms name a real tool call)?\")\nfor cid,(s,v) in pairs.items():\n    fs = a.valid_witness(s) if hasattr(a,'valid_witness') else None\n    print(f\"  {cid}: satisfying_tools={sorted({a.invoked_tool(x) for x in a.normalized_segments(s)}-{None})} violating_tools={sorted({a.invoked_tool(x) for x in a.normalized_segments(v)}-{None})}\")\nPY"
+    ],
+    "_quarantine_reason": "NOT-EVALUABLE on the frozen corpus: zero real patch applications in 4401 calls -- the only fingerprint-shaped text is prose inside a python heredoc, which the segment anchor correctly refuses. No measured denominator; absence is never a pass.",
+    "_conservation": {
+      "requirement": "a retired row names a canonical successor with evidence and a reason; the clause is conserved verbatim in quarantine, never deleted, so the reason it existed can be re-examined",
+      "successor": "U13 itself, conserved verbatim here (U12, first named as successor, is quarantined alongside for the same absent occasion)",
+      "successor_contract": "No live clause gates patch application; none can claim measured conservation until a corpus contains a real one. `git apply --check` remains the guard to restore with this clause.",
+      "status": "quarantined NOT-EVALUABLE; awaiting an evaluable corpus"
+    },
+    "_quarantine_evidence": {
+      "corpus": "corpus/frozen/MANIFEST.json digest c1d98edf67c287a36a8748614790e696e656575caaf5fe43ea9ce9e6ea2d4fb0, 4401 calls, one session",
+      "evaluated": 0,
+      "denied": 0,
+      "candidate_fp": 0,
+      "fp_rate": "N/A (evaluated: 0)",
+      "revisit_if": "a corpus containing a real patch application is admitted"
+    },
+    "expect_unobserved": "applying a GENERATED patch is rarer still than U12 -- it needs a producer and a consumer in the same session."
+  },
+  {
+    "id": "U19",
+    "event": "PreToolUse",
+    "tools": [
+      "Bash"
+    ],
+    "occasion": "the trace is about to perform an in-place text rewrite",
+    "costly": "perform an in-place text rewrite",
+    "guard": "look at the text you are about to rewrite: `rg`/`grep` for the pattern, or `cmp`/checksum the file",
+    "subject": "session_id",
+    "fingerprint": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "(?:^|[;&|]\\s*)\\s*(?:sed\\s+-i|perl\\s+-pi|python3?\\b[^\\n]*\\b(?:rewrite|replace)\\b)"
+    },
+    "discharged_by": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "(?:^|[;&|]\\s*)\\s*(?:cmp\\b|sha256sum\\b|shasum\\b|rg\\b|grep\\b)"
+    },
+    "window": "session",
+    "deny_reason": "perform an in-place text rewrite without ever looking at the text; `rg`/`grep` the pattern first (or `cmp`/checksum the file)",
+    "fixtures_pos": [
+      "sed -i 's/old/new/' config.ini",
+      "perl -pi -e 's/foo/bar/g' data.txt"
+    ],
+    "fixtures_neg": [
+      "cmp before.bin after.bin",
+      "sha256sum before.txt after.txt"
+    ],
+    "_natural_guard": "The old guard demanded `cmp` or a checksum comparison BEFORE the rewrite -- observed 0 times in 2152 real Bash calls, an added obligation: the rewrite landed identically whether or not anyone ran it. The act that actually reverses a blind in-place rewrite is locating the text first, and that is what sessions do: grep/rg appear 504 times in the frozen corpus, the first at call 8, before every `sed -i`. This mirrors U12, which already discharges patch application on rg/grep -- the same act shape gets the same natural guard. cmp/sha256sum remain as the explicit byte-level form."
+  },
+  {
+    "id": "U20",
+    "event": "PreToolUse",
+    "tools": [
+      "Bash"
+    ],
+    "occasion": "the trace is about to make a destructive behavior-changing mutation",
+    "costly": "make a destructive behavior-changing mutation",
+    "guard": "run an independent behavior observer such as the relevant test or probe first",
+    "subject": "session_id",
+    "fingerprint": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "(?:^|[;&|]\\s*)\\s*(?:rm\\b|git\\s+reset\\s+--hard\\b|truncate\\b|find\\b[^\\n]*\\s-delete\\b)"
+    },
+    "discharged_by": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "(?:^|[;&|]\\s*)\\s*(?:pytest\\b|go\\s+test\\b|cargo\\s+test\\b|npm\\s+test\\b|curl\\b)"
+    },
+    "window": "session",
+    "deny_reason": "make a destructive behavior-changing mutation without its guard; run an independent behavior observer such as the relevant test or probe first",
+    "fixtures_pos": [
+      "rm -r generated/state",
+      "git reset --hard HEAD~1",
+      "find . -name '*.tmp' -delete"
+    ],
+    "fixtures_neg": [
+      "pytest -q tests/test_behavior.py",
+      "curl -fsS http://localhost:8080/health"
+    ],
+    "_absorbed_from_U17": "U17 (preview-the-selector, quarantined at 29/30 candidate FP) covered `find -delete` where A02's dir-keyed extractor abstains. The occasion is conserved here: a selector-driven delete is a destructive behavior-changing mutation, and U20's guard -- run the relevant test or probe first -- is the guard real work performs (measured 0 candidate FP, 8 true positives on the frozen corpus)."
+  },
+  {
+    "id": "U24",
+    "event": "PreToolUse",
+    "tools": [
+      "Bash"
+    ],
+    "occasion": "the trace is about to publish or release an artifact after runtime testing",
+    "costly": "publish or release an artifact after runtime testing",
+    "guard": "run the suite with warnings promoted to errors on a supported runtime",
+    "subject": "session_id",
+    "fingerprint": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "(?:^|[;&|]\\s*)\\s*(?:npm\\s+publish\\b|twine\\s+upload\\b|cargo\\s+publish\\b)"
+    },
+    "discharged_by": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "(?:^|[;&|]\\s*)\\s*(?:python\\s+-W\\s*error\\b|PYTHONWARNINGS=error\\b|RUSTFLAGS=[\"']?-Dwarnings|NODE_OPTIONS=[\"']?--throw-deprecation)"
+    },
+    "window": "session",
+    "deny_reason": "publish or release an artifact after runtime testing without its guard; run the suite with warnings promoted to errors on a supported runtime",
+    "fixtures_pos": [
+      "npm publish",
+      "twine upload dist/*",
+      "cargo publish"
+    ],
+    "fixtures_neg": [
+      "python -W error -m pytest",
+      "PYTHONWARNINGS=error tox -e py312"
+    ],
+    "_quarantine_reason": "NOT-EVALUABLE on the frozen corpus: zero publish/release commands (npm publish, twine upload, cargo publish) in 4401 calls. No measured denominator; absence is never a pass. The practice survives independently in the bench register under its audited identity C16-warnings-are-errors, which tools/register_gate.py pins.",
+    "_conservation": {
+      "requirement": "a retired row names a canonical successor with evidence and a reason; the clause is conserved verbatim in quarantine, never deleted, so the reason it existed can be re-examined",
+      "successor": "C16-warnings-are-errors (bench register, pinned by tools/register_gate.py)",
+      "successor_contract": "The audited register row carries the same requirement -- run the suite with warnings promoted to errors before release -- with its witness pair byte-checked by the WITNESS-NOT-CARRIED gate.",
+      "status": "quarantined NOT-EVALUABLE; conserved verbatim"
+    },
+    "_quarantine_evidence": {
+      "corpus": "corpus/frozen/MANIFEST.json digest c1d98edf67c287a36a8748614790e696e656575caaf5fe43ea9ce9e6ea2d4fb0, 4401 calls, one session",
+      "evaluated": 0,
+      "denied": 0,
+      "candidate_fp": 0,
+      "fp_rate": "N/A (evaluated: 0)",
+      "revisit_if": "a corpus containing a publish/release command is admitted"
+    },
+    "expect_unobserved": "publishing or releasing an artifact happens on release days, not in the development sessions this corpus is drawn from."
+  },
+  {
+    "id": "U25",
+    "event": "PreToolUse",
+    "tools": [
+      "Bash"
+    ],
+    "occasion": "the trace is about to run a scanner as an acceptance check",
+    "costly": "run a scanner as an acceptance check",
+    "guard": "run its prefix-distractor regression test first",
+    "subject": "session_id",
+    "fingerprint": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "(?:^|[;&|]\\s*)\\s*(?:python3?\\b[^\\n]*(?:scan|scanner)\\w*\\.py\\b|(?:npm|go|cargo)\\s+test\\b[^\\n]*scanner)"
+    },
+    "discharged_by": {
+      "kind": "regex",
+      "on": "tool_input.command",
+      "pattern": "(?:^|[;&|]\\s*)\\s*(?:pytest|python3?\\s+-m\\s+pytest|go\\s+test|cargo\\s+test|npm\\s+test)\\b[^\\n]*(?:prefix|distractor)"
+    },
+    "window": "session",
+    "deny_reason": "run a scanner as an acceptance check without its guard; run its prefix-distractor regression test first",
+    "fixtures_pos": [
+      "python3 tools/scanner.py fixtures/input.txt",
+      "go test ./scanner -run Acceptance"
+    ],
+    "fixtures_neg": [
+      "pytest -q tests/test_scanner.py -k prefix_distractor",
+      "python3 -m pytest -q tests/test_parser.py"
+    ],
+    "_quarantine_reason": "NOT-EVALUABLE on the frozen corpus: zero scanner-as-acceptance-check invocations in 4401 calls. No measured denominator; absence is never a pass.",
+    "_conservation": {
+      "requirement": "a retired row names a canonical successor with evidence and a reason; the clause is conserved verbatim in quarantine, never deleted, so the reason it existed can be re-examined",
+      "successor": "C08-check-can-fail (bench register, pinned by tools/register_gate.py)",
+      "successor_contract": "The audited register row carries the underlying requirement -- a check must be shown able to fail before its pass is trusted -- of which the prefix-distractor regression demanded here is one instance.",
+      "status": "quarantined NOT-EVALUABLE; conserved verbatim"
+    },
+    "_quarantine_evidence": {
+      "corpus": "corpus/frozen/MANIFEST.json digest c1d98edf67c287a36a8748614790e696e656575caaf5fe43ea9ce9e6ea2d4fb0, 4401 calls, one session",
+      "evaluated": 0,
+      "denied": 0,
+      "candidate_fp": 0,
+      "fp_rate": "N/A (evaluated: 0)",
+      "revisit_if": "a corpus containing a scanner acceptance run is admitted"
+    },
+    "expect_unobserved": "running a scanner AS an acceptance check is a specific misuse; the corpus contains scanner runs, but none standing in for a test suite."
+  }
+]
