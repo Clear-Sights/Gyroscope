@@ -7,37 +7,29 @@
 
 **One purpose: do not let the session derail irreversibly.**
 
-## The problem
-
-Gyroscope opposes one shape of failure: where **doing nothing is the thing that does not heal**.
-Not where an act is dangerous, not where something ends badly — where the *default* lands the
-session somewhere it cannot recover from. The harm needs no author, only the absence of one.
-
-A bad outcome heals three ways: it corrects (requires an action), it stops mattering (passive),
-or you restart (requires an action, and discards everything the session accumulated). Only the
-middle one happens when nobody acts. The failures Gyroscope exists for are the ones that, left
-alone, heal by restart at best or not at all — and what produces them is not a wrong move but an
-ordinary one: *proceed, it looks complete, keep going*. The cheap step that would prevent them
-takes effort and is exactly what a flowing session forgets.
-
-The purest case is a green check. Greenness is what ends the run, so a wrong "it passed" does
-not merely fail — it consumes the opportunity to notice, because investigating requires first
-reversing "it's green."
+The drift it opposes is the one where the DEFAULT is the unhealing issue. Not where an act
+is dangerous, not where something ends badly — where *doing nothing* lands you somewhere that
+does not heal. `rm -rf build/` is a moment; the state it leaves is one where the evidence of what
+was there is gone, and you cannot correct what you cannot reconstruct. The worst of it is when
+the correct path is unreachable without reversing the default — a green check is the pure case:
+greenness is what ends the run, so investigating requires first reversing "it's green."
 
 ## How it heals: reversal
 
-Gyroscope swaps which outcome is free. The costly call is denied until the cheap check it
-depends on is *observed on record*; once it is, the same call runs. Forgetting now produces the
-safe outcome instead of the unhealing one:
+Gyroscope reverses that default. Where the session would otherwise capsize — the costly act just
+runs, the cheap guard is forgotten — it makes denial the resting state, so what happens when
+nobody acts is the safe fate instead of the unhealing one. The method is a repricing, not a
+prohibition:
 
-| | the costly call | the cheap check |
+| | the costly call | the guard |
 |---|---|---|
 | before | free — it just runs | takes effort, and is forgotten |
 | after | costs one cheap call on record | free — denial is the resting state |
 
-This is a repricing, not a prohibition: both outcomes stay reachable, the cost assignment is
-swapped, nothing is added. And its failure mode is loud rather than silent — the thing you
-wanted requires an artifact that is either there or is not.
+Same object, two reachable fates, the cost assignment swapped, nothing added. Forgetting now
+produces the safe outcome, so the rule is not defeated by ordinary forgetting, and its failure
+mode is loud rather than silent: the thing you wanted requires an artifact that is either there
+or is not.
 
 ## The shape: a gyroscope, not rifling
 
