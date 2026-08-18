@@ -1,10 +1,5 @@
 {
-  "_provenance": {
-    "as_of": "sha256:78e84e3333284c96",
-    "live_source_of_truth": "plugin/clauses/",
-    "recompute_with": "python3 -m gyroscope.generate"
-  },
-  "description": "gyroscope \u2014 deny a costly call until its cheap guard is on record",
+  "description": "gyroscope \u2014 deny a costly call until its cheap guard is on record [generated from plugin/clauses/ as_of sha256:78e84e3333284c96]",
   "hooks": {
     "PostToolUse": [
       {
