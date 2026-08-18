@@ -77,6 +77,14 @@ This package carries two arms:
 If serialized `tool_input` contains `gyroscope-allow:` followed by non-whitespace text,
 `PreToolUse` returns an empty decision before evaluating any clause.
 
+## Evidence
+
+- **Reproducible:** `python3 eval/replay.py` from the repository root replays recorded sessions
+  through the real dispatcher and proves the hook speaks at or before the moment each session
+  went wrong — and stays silent on the control. Standard library only.
+- **Live:** [docs/LIVE-HOST.md](docs/LIVE-HOST.md) records a real Claude Code session in which an
+  unguarded push was denied, the guard was run, and the same push was then licensed.
+
 ## Why this is not a deny list
 
 [Ward](https://github.com/Clear-Sights/ward), a sibling plugin, is a deny list: its verdict is a
@@ -87,13 +95,16 @@ whether the *same* call executes now or waits until its licensing evidence exist
 
 ## Honest limitations
 
-- **Behaviour change is unmeasured.** Mechanism tests pass; the controlled experiment that
-  would measure whether the plugin actually changes agent behaviour is designed, not run.
+- **Behaviour change is unmeasured at scale.** Mechanism tests and the replay evidence pass, and
+  one live session shows the loop working; the controlled experiment that would *measure* the
+  effect on agent behaviour is designed, not run.
 - **The ledger constrains an honest-but-forgetful agent, not a forging one.** Its hash chain
   detects altered rows and broken or missing hashes, but not deletion of a valid tail; a writer
   able to forge rows can recompute hashes.
-- **No live-host result is recorded here.** Manifest generation and the unit suite do not prove a
-  live Claude Code or Codex installation.
+- **The live-host evidence is an existence proof, not a rate.** In one recorded live Claude Code
+  session an unguarded `git push` was denied, the agent ran `git status`, and the same push was
+  then licensed ([docs/LIVE-HOST.md](docs/LIVE-HOST.md)); how often agents comply is unmeasured,
+  and no live Codex result is recorded.
 - **A licence is scoped to its clause and session** — one observed guard licenses later
   matching calls for that clause anywhere in the same session, not just against the same file,
   branch, or command.
