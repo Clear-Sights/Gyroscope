@@ -1,0 +1,47 @@
+name: Manual Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g. 1.0.0)'
+        required: true
+        default: '1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run the replay evidence
+        run: python3 eval/replay.py
+
+      - name: Build the install bundle (no eval, no tooling)
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          STAGE="gyroscope-$VERSION"
+          mkdir "$STAGE"
+          cp -r plugin skill LICENSE README.md "$STAGE"/
+          zip -qr "gyroscope-$VERSION.zip" "$STAGE"
+          unzip -l "gyroscope-$VERSION.zip" | grep -q "eval/" && exit 1 || true
+
+      - name: Create tag and GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          TAG="v$VERSION"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "gyroscope $VERSION"
+          git push origin "$TAG"
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes "Obligation-ledger hook for Claude Code and Codex: a costly call is denied until its cheap guard is on record, then the same call executes. Verified at release time: the 5/5 corpus replay (\`python3 eval/replay.py\`). Install from \`gyroscope-$VERSION.zip\` — it carries the two arms (plugin/ and skill/) only; the eval corpus lives in the repository, not the release bundle." \
+            "gyroscope-$VERSION.zip"
