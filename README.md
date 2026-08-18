@@ -93,6 +93,18 @@ is a function of `(event, ledger)`: it is denied before the clause's guard disch
 afterward. Gyroscope does not substitute a safer action and does not remove a fate — it changes
 whether the *same* call executes now or waits until its licensing evidence exists.
 
+## Siblings
+
+Gyroscope is one of three engines that split one taxonomy — act, sequence, statement — and share
+nothing else. All three install from the [Tribunal](https://github.com/Clear-Sights/Tribunal)
+marketplace: `claude plugin marketplace add Clear-Sights/Tribunal`.
+
+| Engine | Judges | One line |
+|---|---|---|
+| [**Ward**](https://github.com/Clear-Sights/Ward) | the pending **act** | nothing outright bad happens |
+| **Gyroscope** (this repo) | the **sequence** | a session neither capsizes nor gets lost |
+| [**Makoto**](https://github.com/Clear-Sights/Makoto) | the **statement** | words aren't empty |
+
 ## Honest limitations
 
 - **The ledger constrains an honest-but-forgetful agent, not a forging one.** Its hash chain
