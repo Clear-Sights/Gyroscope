@@ -116,8 +116,13 @@ Limits before capability claims — read these before the clause table below.
   fails, or names a tool this repository does not have, still discharges.
 - **It does not judge prose.** Every fingerprint is an exact predicate over command, tool, or
   path identity; a clause that would need to infer intent from a command string is not admitted.
-- **Behaviour change is unmeasured.** Built and mechanism-verified is not live-model measured;
-  the corpus replay below proves where the dispatcher fires, not what an agent does about it.
+- **The denial is verified; the behaviour change is not.** "Prevented" here means exactly one
+  thing: a matching costly call is denied before it executes, and that firing is deterministic —
+  the corpus replay below proves the dispatcher denies at or before the derailment event in every
+  authored fixture. What remains unmeasured is what a live agent does *after* the denial: whether
+  it discharges the guard and retries, or routes around it. Built and mechanism-verified is not
+  live-model measured; the replay proves where the dispatcher fires, not what an agent does about
+  it.
 
 ## The shipped clause table
 
