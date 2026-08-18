@@ -80,8 +80,10 @@ If serialized `tool_input` contains `gyroscope-allow:` followed by non-whitespac
 ## Evidence
 
 `python3 eval/replay.py` from the repository root replays recorded sessions through the real
-dispatcher and proves the hook speaks at or before the moment each session went wrong — and stays
-silent on the control, and re-allows the same call after the guard. Standard library only.
+dispatcher: three derailments (a push with no status on record, a force-push with no fetch, a
+"done" claim over a dirty tree) each denied at or before the event where the session went wrong,
+a recovery session where the same denied call passes after its guard, and a benign control that
+stays silent — 5/5, standard library only, exit 0 iff every session meets its expectation.
 
 ## Why this is not a deny list
 
