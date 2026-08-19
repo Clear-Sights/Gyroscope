@@ -36,13 +36,23 @@ class RepeatedGuardsDoNotGrowTheLedger(unittest.TestCase):
         os.environ["GYROSCOPE_STATE_DIR"] = self.state
 
     def test_TEETH_forty_identical_guards_write_one_row_per_clause(self) -> None:
-        table = C.load_dir(C.default_dir())
+        # `load_default()`, NOT `load_dir(default_dir())`, and a floor under the table -- because
+        # an upper bound alone is satisfied perfectly by a table that loaded NOTHING. This ran in
+        # a layout with no loose clause directory, took an empty table, wrote zero rows, and
+        # passed its `<= 10` assertion having exercised no deduplication at all; it went on
+        # passing with the dedup guard deleted. An assertion that only bounds from above cannot
+        # tell "correctly deduplicated" from "never ran", which is this project's own
+        # absence-must-never-read-as-green law turned on one of its own tests. `load_default()` is
+        # also what production loads, so the test now exercises the table users actually get.
+        table = C.load_default()
+        self.assertTrue(table, "an empty clause table makes the bound below vacuous")
         event = {"hook_event_name": "PreToolUse", "tool_name": "Bash",
                  "tool_input": {"command": "git status --porcelain"},
                  "session_id": "s", "agent_id": "a"}
         for _ in range(40):
             dispatch.pre_tool_use(table, Ledger(), event)
         written = rows_written(self.state)
+        self.assertGreater(written, 0, "40 guards wrote nothing: the ledger never ran")
         self.assertLessEqual(written, 10,
                              f"{written} rows for 40 identical guards; the ledger is an "
                              "obligation register, not an observation log")

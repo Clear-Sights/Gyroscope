@@ -464,7 +464,7 @@ def main() -> int:
         # Recorded, and NOT a fault: the event WAS evaluated, on a repaired payload. Conflating the
         # two would inflate the count of unevaluated calls, which is the one number the log exists
         # to keep honest.
-        journal.note_repair(event, repaired, escaped)
+        journal.note_repair(event, repaired, escaped=escaped)
     # One event, one set of probe measurements. Free in production (fresh process per event);
     # explicit here so a host that ever reuses a process cannot inherit stale answers.
     C.reset_probe_cache()

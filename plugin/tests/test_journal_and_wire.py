@@ -421,20 +421,25 @@ class TestTheSessionRowIsExactlyOnce(StateCase):
             session = f"race-{round_no}"
             read_fd, write_fd = os.pipe()
             kids = []
-            for _ in range(16):
-                pid = os.fork()
-                if pid == 0:
-                    try:
-                        os.close(write_fd)
-                        os.read(read_fd, 1)
-                        journal.note_session({"session_id": session}, 21, root=self.state)
-                    finally:
-                        os._exit(0)
-                kids.append(pid)
-            os.close(write_fd)
-            for pid in kids:
-                os.waitpid(pid, 0)
-            os.close(read_fd)
+            try:
+                for _ in range(16):
+                    pid = os.fork()
+                    if pid == 0:
+                        try:
+                            os.close(write_fd)
+                            os.read(read_fd, 1)
+                            journal.note_session({"session_id": session}, 21, root=self.state)
+                        finally:
+                            os._exit(0)
+                    kids.append(pid)
+            finally:
+                # Release and reap in `finally`: a fork() that fails part-way through the burst --
+                # process-table exhaustion on a loaded machine -- must not leave the children it
+                # DID create blocked on the pipe forever. Found by an independent review pass.
+                os.close(write_fd)
+                for pid in kids:
+                    os.waitpid(pid, 0)
+                os.close(read_fd)
             got = [r for r in rows(self.state)
                    if r["kind"] == "session" and r["session_id"] == session]
             self.assertEqual(len(got), 1, f"round {round_no}: {len(got)} rows for one session")
