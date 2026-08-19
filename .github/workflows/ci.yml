@@ -1,0 +1,54 @@
+# The gate for the SHIPPED artifact, on every push.
+#
+# WHY THIS EXISTS SEPARATELY FROM Gyroscope-Dev's CI. The development repository is private, its
+# Actions minutes are a metered monthly quota, and that quota is spent: its jobs are marked failed
+# in ~3 seconds with runner_id: 0 and no log, because no runner is ever assigned. Public
+# repositories are not metered, so this is the one place the suite can actually run. Until the dev
+# repository has minutes again, a red X there is a billing state and a red X HERE is a real defect.
+#
+# WHAT IT RUNS, AND WHY NOT MORE. The dev suite has twelve test modules; six of them are bound to
+# the DEVELOPMENT layout -- they import `gyroscope.generate` / `gyroscope.provenance`, which are
+# dev-only modules, or they read clauses through `load_dir(default_dir())`, the loose-file path.
+# This repository ships neither: it carries the compact `clauses.json` that `load_default()`
+# prefers, which is why the plugin loads its 24 clauses here perfectly well while those six modules
+# do not run. Shipping test files that cannot pass in the repository they sit in would be worse
+# than shipping none, so only the six that gate the SHIPPED artifact are here.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # The replay is this repository's own stated release evidence (see release.yml, which runs
+      # it before cutting a bundle). Running it on every push means a regression is found when it
+      # lands rather than at release time.
+      - name: Corpus replay
+        run: python3 eval/replay.py
+
+      # Stdlib unittest only, no runner installed: the suite is written for `unittest` discovery,
+      # and a pytest-style module here would be a COLLECTION error that takes the whole run down
+      # rather than a failing test.
+      - name: Plugin suite
+        run: python3 -m unittest discover -s tests
+        working-directory: plugin
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
