@@ -69,6 +69,10 @@ class RepeatedGuardsDoNotGrowTheLedger(unittest.TestCase):
         # The licence itself must survive: skipping the write must not skip the state.
         self.assertNotIn(demand_id, ledger.open_ids("s", "a"))
 
+    # makoto-allow: every assertion is delegated to `smoke_replace`, which asserts the plant
+    # seam is present, the mutated run exits NON-ZERO, the named failure text appears, and
+    # the file is byte-identical again afterwards. Observed failing: removing the dedup
+    # guard makes this test red with `plant seam changed`.
     def test_the_check_can_fail(self) -> None:
         root = pathlib.Path(__file__).resolve().parents[1]
         path = root / "gyroscope" / "ledger.py"
