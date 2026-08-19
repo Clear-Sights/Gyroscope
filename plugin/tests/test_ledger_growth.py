@@ -77,6 +77,25 @@ class RepeatedGuardsDoNotGrowTheLedger(unittest.TestCase):
                       b"", "tests.test_ledger_growth.RepeatedGuardsDoNotGrowTheLedger."
                       "test_TEETH_a_repeat_discharge_is_a_no_op", root,
                       "AssertionError: 2 != 22")
+        # The SAME seam again, against the OTHER test -- because a plant only defends the test it
+        # names, and that is exactly how this module rotted. It always carried a plant, the plant
+        # pointed at the repeat-discharge test, and the growth test beside it went vacuous
+        # undetected. Coverage of a module is not coverage of its assertions.
+        smoke_replace(self, path,
+                      b"        if self.is_licensed(session, agent, demand_id):\n            return\n",
+                      b"", "tests.test_ledger_growth.RepeatedGuardsDoNotGrowTheLedger."
+                      "test_TEETH_forty_identical_guards_write_one_row_per_clause", root,
+                      "rows for 40 identical guards")
+        # And the FLOOR, planted against the precise mechanism that made this test vacuous: an
+        # empty table. Reading zero clauses satisfied the `<= 10` bound perfectly while exercising
+        # nothing. The upper bound cannot tell that apart from a correct deduplication; only the
+        # floor can, so the floor gets its own proof that it fires.
+        smoke_replace(self, root / "gyroscope" / "clauses.py",
+                      b"    return load_bundle(bundle) if bundle.is_file() else load_dir(default_dir())",
+                      b"    return []", "tests.test_ledger_growth."
+                      "RepeatedGuardsDoNotGrowTheLedger."
+                      "test_TEETH_forty_identical_guards_write_one_row_per_clause", root,
+                      "an empty clause table makes the bound below vacuous")
 
 
 if __name__ == "__main__":

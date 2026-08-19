@@ -408,13 +408,29 @@ def _record(event: dict, out: dict) -> None:
 # The bound is generous rather than tight for the same reason: a subject longer than the bound
 # fails to match, and a failed match reads as "session-wide", which is a WRONG fact, not a missing
 # one. `journal.note_deny` truncates for storage; this must not truncate for meaning.
-_KEYED_ON_RX = re.compile(r"keyed on `(.{1,2000}?)`, so the guard must name ", re.DOTALL)
+# BOTH halves of the rendered suffix, and the LAST match rather than the first. `_keyed_reason`
+# APPENDS this suffix to the clause's own `deny_reason`, so any earlier occurrence of the phrase
+# came out of the clause TEXT, not out of the renderer. A forward search found that one: a clause
+# whose prose happens to contain "keyed on `x`, so the guard must name " made the journal row name
+# a different operand than the message did. Reproduced -- message rendered for `real-target`, row
+# recorded `wrong` -- and that single disagreement is the entire thing this recovery exists to
+# make impossible. No shipped clause contains the phrase today, so this was latent; a latent hole
+# in the one property the design is built on is still the hole.
+_KEYED_ON_RX = re.compile(
+    r"keyed on `(.{1,2000}?)`, so the guard must name `(.{1,2000}?)` too; ", re.DOTALL)
 
 
 def _subject_of(reason: str) -> str:
     """The operand a deny is keyed on, as named in the message itself; "" when session-wide."""
-    m = _KEYED_ON_RX.search(reason or "")
-    return m.group(1) if m else ""
+    last = None
+    for last in _KEYED_ON_RX.finditer(reason or ""):
+        pass
+    if last is None:
+        return ""
+    # The renderer writes the subject into both halves identically, so these agree by
+    # construction. Group 2 is the one the sentence instructs the agent to name, and if a future
+    # renderer ever let them drift, the row should follow the instruction the agent was given.
+    return last.group(2)
 
 
 def _stated_count(text: str):

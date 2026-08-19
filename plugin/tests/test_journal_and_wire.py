@@ -332,15 +332,44 @@ class TestTheSubjectSurvivesTheRoundTrip(unittest.TestCase):
         self.assertEqual(
             dispatch._subject_of(dispatch._keyed_reason(SessionClause(), "drive")), "")
 
+    def test_a_clause_whose_own_prose_says_keyed_on_does_not_hijack_the_row(self):
+        """The suffix is APPENDED, so the renderer's copy is always the last one in the string.
+
+        A forward search took the clause's own words instead, and the row then named an operand
+        the agent was never shown -- the exact disagreement this class exists to rule out, reached
+        from the one direction the backtick cases could not see.
+        """
+        sys.path.insert(0, str(PLUGIN_ROOT))
+        from gyroscope import dispatch
+
+        class TalkativeClause:
+            id = "X01"
+            deny_reason = ("prerequisite keyed on `wrong`, so the guard must name `wrong` "
+                           "too; spelled exactly as the renderer spells it")
+            subject = {"extract": "path"}
+
+        reason = dispatch._keyed_reason(TalkativeClause(), "real-target")
+        self.assertIn("must name `real-target`", reason)
+        self.assertEqual(dispatch._subject_of(reason), "real-target")
+
     def test_the_check_can_fail(self) -> None:
         """Restore the backtick-terminated span and this class must go red."""
         root = Path(__file__).resolve().parents[1]
         smoke_replace(
             self, root / "gyroscope" / "dispatch.py",
-            b'_KEYED_ON_RX = re.compile(r"keyed on `(.{1,2000}?)`, so the guard must name ", re.DOTALL)',
-            b'_KEYED_ON_RX = re.compile(r"keyed on `([^`]{1,200})`")',
+            b'    r"keyed on `(.{1,2000}?)`, so the guard must name `(.{1,2000}?)` too; ", re.DOTALL)',
+            b'    r"keyed on `([^`]{1,200})`, so the guard must name `([^`]{1,200})` too; ")',
             "tests.test_journal_and_wire.TestTheSubjectSurvivesTheRoundTrip"
             ".test_a_backtick_in_the_subject_does_not_truncate_the_row", root, "AssertionError")
+        # The other half of the same property, planted separately because it fails from the other
+        # direction: reading the FIRST match instead of the last.
+        smoke_replace(
+            self, root / "gyroscope" / "dispatch.py",
+            b'    for last in _KEYED_ON_RX.finditer(reason or ""):\n        pass\n',
+            b'    last = _KEYED_ON_RX.search(reason or "")\n',
+            "tests.test_journal_and_wire.TestTheSubjectSurvivesTheRoundTrip"
+            ".test_a_clause_whose_own_prose_says_keyed_on_does_not_hijack_the_row",
+            root, "AssertionError")
 
 
 class TestABlockRowSaysWhichBlockItWas(unittest.TestCase):
