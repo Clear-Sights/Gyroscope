@@ -90,12 +90,14 @@ def note_session(event: dict, clause_count: int, root=None) -> None:
         if not session:
             return
         path = _root(root)
-        seen = path / "sessions"
-        seen.mkdir(parents=True, exist_ok=True)
         key = "".join(c if c.isalnum() or c in "-_" else "_" for c in session)[:96]
-        marker = seen / key
+        marker = path / "sessions" / key
+        # `exists()` BEFORE `mkdir()`: the overwhelmingly common case is a session already
+        # noted, and that path should cost one stat -- not a mkdir syscall on every tool
+        # call of every session, to create a directory that is almost always already there.
         if marker.exists():
             return
+        marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text("")
         _append(_row(event, "session", clauses=int(clause_count)), root=root)
     except Exception:
