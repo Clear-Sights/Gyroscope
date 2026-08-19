@@ -383,7 +383,7 @@ def _record(event: dict, out: dict) -> None:
             journal.note_deny(event, clause_id, _subject_of(reason), reason)
         elif isinstance(out, dict) and out.get("decision") == "block":
             reason = str(out.get("reason") or "")
-            journal.note_block(event, _leading_int(reason), _bracketed_ids(reason))
+            journal.note_block(event, _stated_count(reason), _bracketed_ids(reason))
         elif hook in ("Stop", "SubagentStop") and not out:
             # A terminal that reconciled cleanly is a POSITIVE result, not an absence, and it is
             # the one outcome a fires-only log would erase. Recording it is what lets a reader
@@ -396,7 +396,19 @@ def _record(event: dict, out: dict) -> None:
 # `_keyed_reason` renders the ledger key into the deny the agent is shown, as "keyed on `X`".
 # The row reads it back out of that rendered text rather than recomputing it, so the log can never
 # disagree with what the agent was actually told -- two derivations of one fact is two facts.
-_KEYED_ON_RX = re.compile(r"keyed on `([^`]{1,200})`")
+#
+# Anchored on the TRAILING SENTENCE, not on the closing backtick, and that is what makes the
+# parse-back actually deliver the property it is here for. `[^`]{1,200}` stopped at the first
+# backtick INSIDE the subject: a subject of ``api`prod.example`` renders as
+# "keyed on `api`prod.example`, so the guard must name ..." and the old pattern captured `api`.
+# The ledger keyed on the full operand, the wire told the agent the full operand, and the journal
+# recorded a shorter, different one -- precisely the disagreement between record and reality that
+# reading the fact back out of the prose exists to make impossible. A lazy span closed by the
+# fixed sentence that always follows cannot be ended early by a character in the subject.
+# The bound is generous rather than tight for the same reason: a subject longer than the bound
+# fails to match, and a failed match reads as "session-wide", which is a WRONG fact, not a missing
+# one. `journal.note_deny` truncates for storage; this must not truncate for meaning.
+_KEYED_ON_RX = re.compile(r"keyed on `(.{1,2000}?)`, so the guard must name ", re.DOTALL)
 
 
 def _subject_of(reason: str) -> str:
@@ -405,13 +417,23 @@ def _subject_of(reason: str) -> str:
     return m.group(1) if m else ""
 
 
-def _leading_int(text: str) -> int:
+def _stated_count(text: str):
+    """The obligation count the block message states, or None when it states none.
+
+    None, NOT 0, and the difference is a row that lies. A terminal that reconciled cleanly and a
+    terminal blocked by an internal fault both reached `note_block` with nothing countable in
+    hand, and a `0` default rendered them as the SAME row -- `open_count: 0, clause_ids: []` --
+    which reads as "reconciled, nothing owed" for both. That is the one reading the fault case
+    must never get: it is the not-evaluable outcome wearing the clean one's clothes, in the log
+    whose whole purpose is telling those two apart. The clean terminal passes its 0 literally
+    from its own call site; everything that merely FAILED to find a count now says so.
+    """
     head = text.split(" ", 2)
     for part in head:
         digits = "".join(ch for ch in part if ch.isdigit())
         if digits:
             return int(digits)
-    return 0
+    return None
 
 
 def _bracketed_ids(text: str) -> list:
@@ -419,7 +441,7 @@ def _bracketed_ids(text: str) -> list:
 
 
 def main() -> int:
-    repaired = 0
+    repaired = escaped = 0
     try:
         raw, repaired = wire.read_stdin()
         event = json.loads(raw or "{}")
@@ -430,18 +452,19 @@ def main() -> int:
         # that one -- the escape is plain ASCII in the raw text -- so the parsed object is scrubbed
         # too. Both doors end at the same `derive_id` raise, and a raise there is swallowed by the
         # per-clause isolation as a SILENT ABSTENTION. See `gyroscope.wire`.
+        # Counted SEPARATELY, never summed into `repaired`: one counts undecodable bytes, the
+        # other counts surrogate escapes that were valid ASCII on the wire. See `note_repair`.
         event, escaped = wire.scrub(event)
-        repaired += escaped
     except Exception as exc:
         print(f"gyroscope: unreadable event ({type(exc).__name__}) -- NOT-EVALUABLE", file=sys.stderr)
         journal.note_fault({}, "unreadable_event", type(exc).__name__, failed_closed=False)
         print("{}")
         return 0
-    if repaired:
+    if repaired or escaped:
         # Recorded, and NOT a fault: the event WAS evaluated, on a repaired payload. Conflating the
         # two would inflate the count of unevaluated calls, which is the one number the log exists
         # to keep honest.
-        journal.note_repair(event, repaired)
+        journal.note_repair(event, repaired, escaped)
     # One event, one set of probe measurements. Free in production (fresh process per event);
     # explicit here so a host that ever reuses a process cannot inherit stale answers.
     C.reset_probe_cache()
