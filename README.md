@@ -124,6 +124,29 @@ Limits before capability claims — read these before the clause table below.
   live-model measured; the replay proves where the dispatcher fires, not what an agent does about
   it.
 
+## What Gyroscope writes down
+
+`obligations.jsonl` is a **ledger**, not a log: it records outstanding obligations, so a session in
+which every clause passed leaves nothing behind — and so does a session in which the plugin never
+ran. "Did Gyroscope catch anything?" therefore had no answer at all. Not "no": *unanswerable*,
+which is indistinguishable from never-installed, and which is the same absence-reads-as-green
+failure this plugin refuses to accept from a session.
+
+`gyroscope/journal.py` closes that. It appends to `decisions.jsonl` beside the ledger: one
+`session` row the first time a session is seen, carrying the loaded **clause count** — a row saying
+`clauses: 0` is a gate that checked nothing while everyone believes it is on — plus one row per
+`deny`, per terminal `block` (including clean reconciliations, which are a positive result a
+fires-only log would erase), per `fault`, and per repaired envelope. There is deliberately no row
+per allowed call.
+
+Every row names `plugin`, `session_id`, `agent_id` and `tool_name`, and every deny and block on the
+wire is now prefixed `gyroscope:`. Three plugins register `PreToolUse` and the host shows the user
+a reason but never a source.
+
+`fault` rows carry `failed_closed`, which makes Gyroscope's split direction — carriage open,
+decision closed — checkable against the record rather than against its docstrings. See
+[Courthouse docs/FAIL-DIRECTION.md](https://github.com/Clear-Sights/Courthouse/blob/main/docs/FAIL-DIRECTION.md).
+
 ## The shipped clause table
 
 The dispatcher loads `plugin/gyroscope/clauses.json` — 24 admitted clauses, every one carrying

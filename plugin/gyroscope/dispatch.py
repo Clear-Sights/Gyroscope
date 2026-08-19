@@ -29,6 +29,7 @@ from re import error
 import sys
 
 from . import clauses as C
+from . import journal, wire
 from .ledger import Demand, Ledger, derive_id
 
 # LINE-BOUND, and only on the fields an author types deliberately.
@@ -90,10 +91,19 @@ def _subject(clause, event: dict) -> str:
     return str(_get(event, spec) or "")[:200]
 
 
+# THE AUTHOR OF A DENY MUST BE ON THE DENY. Ward, Gyroscope and Makoto all register PreToolUse and
+# all three can refuse a call; the host shows the user a reason, not a source. With three
+# unattributed reasons in play, "which plugin blocked this?" was answerable only by guessing from
+# wording -- and after the fact, not at all. Both siblings already prefix their own name; this is
+# the third. It costs one word and makes every refusal in the transcript joinable to the row in
+# `decisions.jsonl` that recorded it.
+_PREFIX = "gyroscope"
+
+
 def _deny(reason: str) -> dict:
     return {"hookSpecificOutput": {"hookEventName": "PreToolUse",
                                    "permissionDecision": "deny",
-                                   "permissionDecisionReason": reason}}
+                                   "permissionDecisionReason": f"{_PREFIX}: {reason}"}}
 
 
 # A deny that does not name what it is keyed on is an unhealing loop, not an interruption.
@@ -152,7 +162,7 @@ def _first_index(clause, event: dict, predicate, command: str) -> int:
 
 
 def _block(reason: str) -> dict:
-    return {"decision": "block", "reason": reason}
+    return {"decision": "block", "reason": f"{_PREFIX}: {reason}"}
 
 
 def _context(text: str, event_name: str = "SessionStart") -> dict:
@@ -354,20 +364,90 @@ HANDLERS = {
 }
 
 
-def main() -> int:
+def _record(event: dict, out: dict) -> None:
+    """Write the persisted trace of THIS event's outcome. Never raises, never alters `out`.
+
+    The decision has already been made by the time this runs, and nothing here can change it -- see
+    `journal`'s module docstring for why the log is deliberately powerless. What it buys is that
+    "did Gyroscope catch anything this session?" stops being unanswerable.
+    """
     try:
-        event = json.loads(sys.stdin.read() or "{}")
+        hook = event.get("hook_event_name")
+        wire_out = out.get("hookSpecificOutput") if isinstance(out, dict) else None
+        if isinstance(wire_out, dict) and wire_out.get("permissionDecision") == "deny":
+            reason = str(wire_out.get("permissionDecisionReason") or "")
+            clause_id = ""
+            start = reason.find("[")
+            if start != -1 and reason.find("]", start) != -1:
+                clause_id = reason[start + 1:reason.find("]", start)]
+            journal.note_deny(event, clause_id, _subject_of(reason), reason)
+        elif isinstance(out, dict) and out.get("decision") == "block":
+            reason = str(out.get("reason") or "")
+            journal.note_block(event, _leading_int(reason), _bracketed_ids(reason))
+        elif hook in ("Stop", "SubagentStop") and not out:
+            # A terminal that reconciled cleanly is a POSITIVE result, not an absence, and it is
+            # the one outcome a fires-only log would erase. Recording it is what lets a reader
+            # distinguish "reconciled, nothing owed" from "never reached the terminal".
+            journal.note_block(event, 0, [])
+    except Exception:
+        pass
+
+
+# `_keyed_reason` renders the ledger key into the deny the agent is shown, as "keyed on `X`".
+# The row reads it back out of that rendered text rather than recomputing it, so the log can never
+# disagree with what the agent was actually told -- two derivations of one fact is two facts.
+_KEYED_ON_RX = re.compile(r"keyed on `([^`]{1,200})`")
+
+
+def _subject_of(reason: str) -> str:
+    """The operand a deny is keyed on, as named in the message itself; "" when session-wide."""
+    m = _KEYED_ON_RX.search(reason or "")
+    return m.group(1) if m else ""
+
+
+def _leading_int(text: str) -> int:
+    head = text.split(" ", 2)
+    for part in head:
+        digits = "".join(ch for ch in part if ch.isdigit())
+        if digits:
+            return int(digits)
+    return 0
+
+
+def _bracketed_ids(text: str) -> list:
+    return re.findall(r"\[([A-Za-z0-9._-]{1,40})\]", text or "")
+
+
+def main() -> int:
+    repaired = 0
+    try:
+        raw, repaired = wire.read_stdin()
+        event = json.loads(raw or "{}")
         if not isinstance(event, dict):
             raise ValueError("event is not an object")
+        # The other surrogate door: valid UTF-8 bytes whose JSON text carried an unpaired \uD8xx
+        # escape, which json.loads materializes as a real lone surrogate. `read_stdin` cannot see
+        # that one -- the escape is plain ASCII in the raw text -- so the parsed object is scrubbed
+        # too. Both doors end at the same `derive_id` raise, and a raise there is swallowed by the
+        # per-clause isolation as a SILENT ABSTENTION. See `gyroscope.wire`.
+        event, escaped = wire.scrub(event)
+        repaired += escaped
     except Exception as exc:
         print(f"gyroscope: unreadable event ({type(exc).__name__}) -- NOT-EVALUABLE", file=sys.stderr)
+        journal.note_fault({}, "unreadable_event", type(exc).__name__, failed_closed=False)
         print("{}")
         return 0
+    if repaired:
+        # Recorded, and NOT a fault: the event WAS evaluated, on a repaired payload. Conflating the
+        # two would inflate the count of unevaluated calls, which is the one number the log exists
+        # to keep honest.
+        journal.note_repair(event, repaired)
     # One event, one set of probe measurements. Free in production (fresh process per event);
     # explicit here so a host that ever reuses a process cannot inherit stale answers.
     C.reset_probe_cache()
     try:
         table = C.load_default()
+        journal.note_session(event, len(table))
         # Absence must never read as green. Found by removing the input: with the clause directory
         # empty, `rm -rf build/` was ALLOWED and Stop returned {} -- a clean bill of health from a
         # gate that checked nothing, while everyone believes it is on. Loading is this function's
@@ -376,6 +456,12 @@ def main() -> int:
         if not table:
             print("gyroscope: 0 clauses loaded from "
                   f"{C.default_dir()} -- NOT-EVALUABLE, nothing was checked", file=sys.stderr)
+            # The strongest "nothing was checked" signal there is, and previously it existed only
+            # as a stderr line -- i.e. in the debug log, where a hook that exits 0 sends output
+            # nobody reads. The session row already says `clauses: 0`; this says it happened on
+            # this event too.
+            journal.note_fault(event, "zero_clauses", f"0 clauses from {C.default_dir()}",
+                               failed_closed=event.get("hook_event_name") in ("Stop", "SubagentStop"))
             if event.get("hook_event_name") in ("Stop", "SubagentStop"):
                 print(json.dumps(_block(
                     "gyroscope loaded 0 clauses -- NOT-EVALUABLE, not a pass. Nothing was checked "
@@ -385,6 +471,7 @@ def main() -> int:
     except Exception as exc:
         print(f"gyroscope: {type(exc).__name__} -- NOT-EVALUABLE, failing closed", file=sys.stderr)
         out = _closed_not_evaluable(event, type(exc).__name__)
+        journal.note_fault(event, "evaluation", type(exc).__name__, failed_closed=out is not None)
         if out is None:
             print("{}")
             return 0
@@ -394,10 +481,13 @@ def main() -> int:
         print(f"gyroscope: {type(exc).__name__} while serializing -- NOT-EVALUABLE, failing closed",
               file=sys.stderr)
         closed = _closed_not_evaluable(event, f"serialization {type(exc).__name__}")
+        journal.note_fault(event, "serialization", type(exc).__name__,
+                           failed_closed=closed is not None)
         if closed is None:
             print("{}")
             return 0
         encoded = json.dumps(closed)
+    _record(event, out if isinstance(out, dict) else {})
     print(encoded)
     return 0
 
