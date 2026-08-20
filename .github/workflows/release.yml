@@ -28,15 +28,11 @@ jobs:
           STAGE="gyroscope-$VERSION"
           mkdir "$STAGE"
           cp -r plugin skill LICENSE README.md "$STAGE"/
-          # plugin/tests is a GATE, not runtime, and this copy is wholesale. It arrived when the
-          # suite moved here so the public runners could run it, and without this line the install
-          # bundle a user downloads would carry the test suite -- in the one repository whose
-          # package cap exists to keep what ships equal to what runs. Removed here rather than
-          # kept out of plugin/ so the files stay byte-identical to the development copy.
-          rm -rf "$STAGE/plugin/tests"
           zip -qr "gyroscope-$VERSION.zip" "$STAGE"
           # Both exclusions asserted, not assumed: a bundle that quietly regained either of them
-          # would look exactly like a correct one.
+          # would look exactly like a correct one. The tests assertion no longer has a matching
+          # `rm` above it, and that is the point -- the suite is outside `plugin/` now, so this
+          # copy cannot pick it up. Keeping the assertion is what would catch it moving back.
           unzip -l "gyroscope-$VERSION.zip" | grep -q "eval/" && exit 1 || true
           unzip -l "gyroscope-$VERSION.zip" | grep -q "plugin/tests/" && exit 1 || true
 

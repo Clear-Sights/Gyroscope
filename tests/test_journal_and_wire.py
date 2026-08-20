@@ -27,9 +27,9 @@ import time
 import unittest
 from pathlib import Path
 
-from tests.plant_support import smoke_replace
+from tests.plant_support import PLUGIN, smoke_replace
 
-PLUGIN_ROOT = Path(__file__).resolve().parent.parent
+PLUGIN_ROOT = PLUGIN
 
 
 def run(raw: bytes, state_dir: Path) -> dict:
@@ -354,22 +354,20 @@ class TestTheSubjectSurvivesTheRoundTrip(unittest.TestCase):
 
     def test_the_check_can_fail(self) -> None:
         """Restore the backtick-terminated span and this class must go red."""
-        root = Path(__file__).resolve().parents[1]
         smoke_replace(
-            self, root / "gyroscope" / "dispatch.py",
+            self, PLUGIN / "gyroscope" / "dispatch.py",
             b'    r"keyed on `(.{1,2000}?)`, so the guard must name `(.{1,2000}?)` too; ", re.DOTALL)',
             b'    r"keyed on `([^`]{1,200})`, so the guard must name `([^`]{1,200})` too; ")',
             "tests.test_journal_and_wire.TestTheSubjectSurvivesTheRoundTrip"
-            ".test_a_backtick_in_the_subject_does_not_truncate_the_row", root, "AssertionError")
+            ".test_a_backtick_in_the_subject_does_not_truncate_the_row", "AssertionError")
         # The other half of the same property, planted separately because it fails from the other
         # direction: reading the FIRST match instead of the last.
         smoke_replace(
-            self, root / "gyroscope" / "dispatch.py",
+            self, PLUGIN / "gyroscope" / "dispatch.py",
             b'    for last in _KEYED_ON_RX.finditer(reason or ""):\n        pass\n',
             b'    last = _KEYED_ON_RX.search(reason or "")\n',
             "tests.test_journal_and_wire.TestTheSubjectSurvivesTheRoundTrip"
-            ".test_a_clause_whose_own_prose_says_keyed_on_does_not_hijack_the_row",
-            root, "AssertionError")
+            ".test_a_clause_whose_own_prose_says_keyed_on_does_not_hijack_the_row", "AssertionError")
 
 
 class TestABlockRowSaysWhichBlockItWas(unittest.TestCase):
@@ -405,13 +403,12 @@ class TestABlockRowSaysWhichBlockItWas(unittest.TestCase):
 
     def test_the_check_can_fail(self) -> None:
         """Restore the 0 default and the fault block becomes indistinguishable from a clean one."""
-        root = Path(__file__).resolve().parents[1]
         smoke_replace(
-            self, root / "gyroscope" / "dispatch.py",
+            self, PLUGIN / "gyroscope" / "dispatch.py",
             b"            return int(digits)\n    return None",
             b"            return int(digits)\n    return 0",
             "tests.test_journal_and_wire.TestABlockRowSaysWhichBlockItWas"
-            ".test_a_message_stating_no_count_reads_as_unknown_not_zero", root, "AssertionError")
+            ".test_a_message_stating_no_count_reads_as_unknown_not_zero", "AssertionError")
 
 
 class TestTheSessionRowIsExactlyOnce(StateCase):
@@ -475,13 +472,12 @@ class TestTheSessionRowIsExactlyOnce(StateCase):
 
     def test_the_check_can_fail(self) -> None:
         """Drop the digest and two differently-punctuated ids collide onto one marker again."""
-        root = Path(__file__).resolve().parents[1]
         smoke_replace(
-            self, root / "gyroscope" / "journal.py",
+            self, PLUGIN / "gyroscope" / "journal.py",
             b"    return f\"{safe}-{hashlib.sha256(session.encode('utf-8')).hexdigest()[:16]}\"",
             b"    return safe",
             "tests.test_journal_and_wire.TestTheSessionRowIsExactlyOnce"
-            ".test_ids_differing_only_in_punctuation_are_not_one_session", root, "AssertionError")
+            ".test_ids_differing_only_in_punctuation_are_not_one_session", "AssertionError")
 
 
 class TestRepairCountsMeanWhatTheyAreNamed(StateCase):
@@ -504,14 +500,13 @@ class TestRepairCountsMeanWhatTheyAreNamed(StateCase):
 
     def test_the_check_can_fail(self) -> None:
         """Sum the escape count back into the byte count and the field stops meaning bytes."""
-        root = Path(__file__).resolve().parents[1]
         smoke_replace(
-            self, root / "gyroscope" / "dispatch.py",
+            self, PLUGIN / "gyroscope" / "dispatch.py",
             b"        event, escaped = wire.scrub(event)\n    except Exception as exc:",
             b"        event, escaped = wire.scrub(event)\n        repaired += escaped\n"
             b"    except Exception as exc:",
             "tests.test_journal_and_wire.TestRepairCountsMeanWhatTheyAreNamed"
-            ".test_an_escape_only_envelope_reports_zero_bytes_repaired", root, "AssertionError")
+            ".test_an_escape_only_envelope_reports_zero_bytes_repaired", "AssertionError")
 
 
 if __name__ == "__main__":

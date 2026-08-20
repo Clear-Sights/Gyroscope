@@ -18,8 +18,7 @@ quotes. An `&` following `<` or `>` is a redirect, not a control operator.
 from __future__ import annotations
 
 import unittest
-from pathlib import Path
-from tests.plant_support import smoke_replace
+from tests.plant_support import PLUGIN, smoke_replace
 
 from gyroscope import clauses as C
 
@@ -39,18 +38,15 @@ class SegmentsSplitOnControlOperatorsOnly(unittest.TestCase):
                 self.assertEqual(expected, C.segments(command))
 
     def test_the_check_can_fail(self) -> None:
-        root = Path(__file__).resolve().parents[1]
-        path = root / "gyroscope" / "clauses.py"
+        path = PLUGIN / "gyroscope" / "clauses.py"
         smoke_replace(self, path, b"            elif quote == '\"' and ch == \"\\\\\"",
                       b"            elif ch == \"\\\\\"", "tests.test_segmenter."
                       "SegmentsSplitOnControlOperatorsOnly."
-                      "test_TEETH_redirects_and_quoted_backslashes_do_not_split", root,
-                      "Lists differ")
+                      "test_TEETH_redirects_and_quoted_backslashes_do_not_split", "Lists differ")
         smoke_replace(self, path, b'            if ch == "&" and buf and buf[-1] in "<>":',
                       b'            if False:', "tests.test_segmenter."
                       "SegmentsSplitOnControlOperatorsOnly."
-                      "test_TEETH_redirects_and_quoted_backslashes_do_not_split", root,
-                      "Lists differ")
+                      "test_TEETH_redirects_and_quoted_backslashes_do_not_split", "Lists differ")
 
 
 if __name__ == "__main__":

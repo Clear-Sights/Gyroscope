@@ -16,10 +16,9 @@ import json
 import os
 import subprocess
 import unittest
-from pathlib import Path
-from tests.plant_support import smoke_replace
+from tests.plant_support import PLUGIN, smoke_replace
 
-SHIM = Path(__file__).resolve().parents[1] / "hooks" / "dispatch.sh"
+SHIM = PLUGIN / "hooks" / "dispatch.sh"
 EVENT = '{"hook_event_name":"PreToolUse","tool_name":"Read","tool_input":{},"session_id":"t"}'
 
 
@@ -48,13 +47,11 @@ class WiringFaultsAreOpenButVisible(unittest.TestCase):
                          "a healthy dispatch must not warn the user about anything")
 
     def test_the_check_can_fail(self) -> None:
-        root = Path(__file__).resolve().parents[1]
         smoke_replace(self, SHIM,
                       b'''    printf '{"systemMessage":"gyroscope hook wiring fault: %s"}\\n' "$visible_fault"\n''',
                       b"    printf '{}\\n'\n", "tests.test_shim_visibility."
                       "WiringFaultsAreOpenButVisible."
-                      "test_TEETH_a_missing_interpreter_surfaces_and_still_allows", root,
-                      "a wiring fault that only writes stderr is invisible at exit 0")
+                      "test_TEETH_a_missing_interpreter_surfaces_and_still_allows", "a wiring fault that only writes stderr is invisible at exit 0")
 
 
 if __name__ == "__main__":

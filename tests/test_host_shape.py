@@ -23,9 +23,9 @@ from __future__ import annotations
 import json
 import subprocess
 import unittest
-from pathlib import Path
+from tests.plant_support import REPO
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = REPO
 CLAUDE = "plugin/hooks/hooks.json"
 CODEX = "plugin/hooks/hooks.codex.json"
 SHIM = "dispatch.sh"
