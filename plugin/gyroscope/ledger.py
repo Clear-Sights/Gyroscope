@@ -104,6 +104,17 @@ class Ledger:
         row["prev"] = prev
         row["hash"] = _chain_hash(prev, row)
         with self.path.open("a", encoding="utf-8") as fh:
+            # A torn write (ENOSPC/EIO, a row killed between buffer flushes) can leave the file
+            # ending mid-line. Appending straight onto that fragment merges two rows into one
+            # unparseable line, so a discharge that LANDED reads back as never having happened
+            # and Stop blocks on a false fact. Terminate the fragment first: the fragment stays
+            # a skipped malformed row, and this row stays readable.
+            fh.flush()
+            if fh.tell() > 0:
+                with self.path.open("rb") as tail:
+                    tail.seek(-1, os.SEEK_END)
+                    if tail.read(1) != b"\n":
+                        fh.write("\n")
             fh.write(_canon(row) + "\n")
 
     def _tail_hash(self) -> str:
@@ -115,17 +126,25 @@ class Ledger:
     def _rows(self):
         if not self.path.exists():
             return
-        with self.path.open(encoding="utf-8") as fh:
+        # errors="replace": a torn write can split a multi-byte UTF-8 sequence (`_canon` writes
+        # ensure_ascii=False), and one undecodable byte must corrupt one row, not raise
+        # UnicodeDecodeError out of every method for every session sharing this state dir.
+        with self.path.open(encoding="utf-8", errors="replace") as fh:
             for line in fh:
                 line = line.strip()
                 if not line:
                     continue
                 try:
-                    yield json.loads(line)
+                    row = json.loads(line)
                 except json.JSONDecodeError:
                     # A malformed row is skipped, never fatal: this plugin fails OPEN, and a
                     # corrupt ledger must not wedge every session behind it.
                     continue
+                if not isinstance(row, dict):
+                    # JSON-valid but not a row (`123`, `null`): same skip, or every consumer's
+                    # `.get` raises and "skipped, never fatal" is a lie.
+                    continue
+                yield row
 
     def demand(self, d: Demand) -> bool:
         """Record a demand. Returns False if this exact demand is already open (idempotent)."""
@@ -167,10 +186,13 @@ class Ledger:
         for row in self._rows():
             if row.get("session") != session or row.get("agent") != agent:
                 continue
+            rid = row.get("id")  # .get, like every other row access: a scoped demand row
+            if rid is None:      # missing "id" is a malformed row to skip, not a KeyError.
+                continue
             if row.get("kind") == "demand":
-                opened.add(row["id"])
+                opened.add(rid)
             elif row.get("kind") == "discharge":
-                closed.add(row["id"])
+                closed.add(rid)
         return opened - closed
 
     def open_demands(self, session: str, agent: str) -> list[dict]:
