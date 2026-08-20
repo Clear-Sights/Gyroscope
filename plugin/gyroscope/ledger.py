@@ -51,13 +51,26 @@ def _canon(obj) -> str:
     return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
+def _digest(text: str) -> str:
+    return hashlib.sha256(text.encode()).hexdigest()[:16]
+
+
+def _chain_hash(prev: str, body: dict) -> str:
+    """The chain rule, written ONCE. `_append` computes it and `verify_chain` re-derives it; two
+    copies of one expression is exactly how a verifier starts reporting corruption on a sound
+    ledger, so the writer and the checker are the same line of code or they are not the same rule.
+    `body` must carry every field of the row EXCEPT `hash`.
+    """
+    return _digest(prev + _canon(body))
+
+
 def derive_id(session: str, agent: str, clause_id: str, subject: str) -> str:
     """Content-addressed, so re-stating one demand does not duplicate it.
 
     `subject` is the normalized thing at risk (a path, a ref, a command head) -- not the whole
     command, or two spellings of one demand would read as two.
     """
-    return hashlib.sha256(_canon([session, agent, clause_id, subject]).encode()).hexdigest()[:16]
+    return _digest(_canon([session, agent, clause_id, subject]))
 
 
 @dataclass(frozen=True)
@@ -89,7 +102,7 @@ class Ledger:
         prev = self._tail_hash()
         row = dict(row)
         row["prev"] = prev
-        row["hash"] = hashlib.sha256((prev + _canon(row)).encode()).hexdigest()[:16]
+        row["hash"] = _chain_hash(prev, row)
         with self.path.open("a", encoding="utf-8") as fh:
             fh.write(_canon(row) + "\n")
 
@@ -161,11 +174,12 @@ class Ledger:
         return opened - closed
 
     def open_demands(self, session: str, agent: str) -> list[dict]:
-        ids = self.open_ids(session, agent)
-        seen, out = set(), []
+        ids = self.open_ids(session, agent)  # a fresh set per call, so spending from it is safe
+        out = []
         for row in self._rows():
-            if row.get("kind") == "demand" and row.get("id") in ids and row["id"] not in seen:
-                seen.add(row["id"])
+            rid = row.get("id")
+            if row.get("kind") == "demand" and rid in ids:
+                ids.discard(rid)  # first row per id wins; discarding it IS the dedup
                 out.append(row)
         return out
 
@@ -174,7 +188,7 @@ class Ledger:
         prev = ""
         for row in self._rows():
             body = {k: v for k, v in row.items() if k != "hash"}
-            if hashlib.sha256((prev + _canon(body)).encode()).hexdigest()[:16] != row.get("hash"):
+            if _chain_hash(prev, body) != row.get("hash"):
                 return row.get("hash") or "<missing>"
             prev = row["hash"]
         return None

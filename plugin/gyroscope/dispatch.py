@@ -205,22 +205,21 @@ def pre_tool_use(table, ledger: Ledger, event: dict) -> dict:
             if C.discharges(cl, event):
                 # A guard only licenses acts that come AFTER it. When one string carries both, the
                 # segment order decides: guard-then-act discharges, act-then-guard does not, and
-                # `git push && git status` is the second. Falling through to the match below is
-                # what turns the self-licence back into a deny.
+                # `git push && git status` is the second. Handling it exactly as the match below
+                # does is what turns the self-licence back into a deny.
+                act_at = guard_at = -1
                 if isinstance(command, str):
                     act_at = _first_index(cl, event, C.match, command)
                     guard_at = _first_index(cl, event, C.discharges, command)
-                    if act_at != -1 and guard_at > act_at:
-                        subject = _subject(cl, event)
-                        did = derive_id(session, agent, cl.id, subject)
-                        if not ledger.is_licensed(session, agent, did):
-                            ledger.demand(Demand(id=did, session=session, agent=agent,
-                                                 clause_id=cl.id, subject=subject,
-                                                 reason=cl.deny_reason))
-                            return _deny(_keyed_reason(cl, subject))
-                        continue
                 subject = _subject(cl, event)
                 did = derive_id(session, agent, cl.id, subject)
+                if act_at != -1 and guard_at > act_at:
+                    if not ledger.is_licensed(session, agent, did):
+                        ledger.demand(Demand(id=did, session=session, agent=agent,
+                                             clause_id=cl.id, subject=subject,
+                                             reason=cl.deny_reason))
+                        return _deny(_keyed_reason(cl, subject))
+                    continue
                 ledger.discharge(session, agent, did, "guard call observed")
                 continue
             if C.match(cl, event):
@@ -310,7 +309,7 @@ def reconcile(table, ledger: Ledger, event: dict) -> dict:
         open_rows = ledger.open_demands(session, agent)
     except Exception as exc:
         return _block(f"gyroscope could not read its ledger: {type(exc).__name__} "
-                      f"-- NOT-EVALUABLE, not a pass")
+                      "-- NOT-EVALUABLE, not a pass")
     undischarged = []
     event_name = event.get("hook_event_name", "Stop")
     for cl in table:
