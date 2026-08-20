@@ -51,13 +51,26 @@ def _canon(obj) -> str:
     return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
+def _digest(text: str) -> str:
+    return hashlib.sha256(text.encode()).hexdigest()[:16]
+
+
+def _chain_hash(prev: str, body: dict) -> str:
+    """The chain rule, written ONCE. `_append` computes it and `verify_chain` re-derives it; two
+    copies of one expression is exactly how a verifier starts reporting corruption on a sound
+    ledger, so the writer and the checker are the same line of code or they are not the same rule.
+    `body` must carry every field of the row EXCEPT `hash`.
+    """
+    return _digest(prev + _canon(body))
+
+
 def derive_id(session: str, agent: str, clause_id: str, subject: str) -> str:
     """Content-addressed, so re-stating one demand does not duplicate it.
 
     `subject` is the normalized thing at risk (a path, a ref, a command head) -- not the whole
     command, or two spellings of one demand would read as two.
     """
-    return hashlib.sha256(_canon([session, agent, clause_id, subject]).encode()).hexdigest()[:16]
+    return _digest(_canon([session, agent, clause_id, subject]))
 
 
 @dataclass(frozen=True)
@@ -89,8 +102,19 @@ class Ledger:
         prev = self._tail_hash()
         row = dict(row)
         row["prev"] = prev
-        row["hash"] = hashlib.sha256((prev + _canon(row)).encode()).hexdigest()[:16]
+        row["hash"] = _chain_hash(prev, row)
         with self.path.open("a", encoding="utf-8") as fh:
+            # A torn write (ENOSPC/EIO, a row killed between buffer flushes) can leave the file
+            # ending mid-line. Appending straight onto that fragment merges two rows into one
+            # unparseable line, so a discharge that LANDED reads back as never having happened
+            # and Stop blocks on a false fact. Terminate the fragment first: the fragment stays
+            # a skipped malformed row, and this row stays readable.
+            fh.flush()
+            if fh.tell() > 0:
+                with self.path.open("rb") as tail:
+                    tail.seek(-1, os.SEEK_END)
+                    if tail.read(1) != b"\n":
+                        fh.write("\n")
             fh.write(_canon(row) + "\n")
 
     def _tail_hash(self) -> str:
@@ -102,17 +126,25 @@ class Ledger:
     def _rows(self):
         if not self.path.exists():
             return
-        with self.path.open(encoding="utf-8") as fh:
+        # errors="replace": a torn write can split a multi-byte UTF-8 sequence (`_canon` writes
+        # ensure_ascii=False), and one undecodable byte must corrupt one row, not raise
+        # UnicodeDecodeError out of every method for every session sharing this state dir.
+        with self.path.open(encoding="utf-8", errors="replace") as fh:
             for line in fh:
                 line = line.strip()
                 if not line:
                     continue
                 try:
-                    yield json.loads(line)
+                    row = json.loads(line)
                 except json.JSONDecodeError:
                     # A malformed row is skipped, never fatal: this plugin fails OPEN, and a
                     # corrupt ledger must not wedge every session behind it.
                     continue
+                if not isinstance(row, dict):
+                    # JSON-valid but not a row (`123`, `null`): same skip, or every consumer's
+                    # `.get` raises and "skipped, never fatal" is a lie.
+                    continue
+                yield row
 
     def demand(self, d: Demand) -> bool:
         """Record a demand. Returns False if this exact demand is already open (idempotent)."""
@@ -143,29 +175,33 @@ class Ledger:
         licence would let the costly act through on the strength of nothing ever having happened.
         Absence is not a licence; only an observed discharge is.
         """
-        for row in self._rows():
-            if (row.get("kind") == "discharge" and row.get("id") == demand_id
-                    and row.get("session") == session and row.get("agent") == agent):
-                return True
-        return False
+        return any(
+            row.get("kind") == "discharge" and row.get("id") == demand_id
+            and row.get("session") == session and row.get("agent") == agent
+            for row in self._rows()
+        )
 
     def open_ids(self, session: str, agent: str) -> set[str]:
         opened, closed = set(), set()
         for row in self._rows():
             if row.get("session") != session or row.get("agent") != agent:
                 continue
+            rid = row.get("id")  # .get, like every other row access: a scoped demand row
+            if rid is None:      # missing "id" is a malformed row to skip, not a KeyError.
+                continue
             if row.get("kind") == "demand":
-                opened.add(row["id"])
+                opened.add(rid)
             elif row.get("kind") == "discharge":
-                closed.add(row["id"])
+                closed.add(rid)
         return opened - closed
 
     def open_demands(self, session: str, agent: str) -> list[dict]:
-        ids = self.open_ids(session, agent)
-        seen, out = set(), []
+        ids = self.open_ids(session, agent)  # a fresh set per call, so spending from it is safe
+        out = []
         for row in self._rows():
-            if row.get("kind") == "demand" and row.get("id") in ids and row["id"] not in seen:
-                seen.add(row["id"])
+            rid = row.get("id")
+            if row.get("kind") == "demand" and rid in ids:
+                ids.discard(rid)  # first row per id wins; discarding it IS the dedup
                 out.append(row)
         return out
 
@@ -174,7 +210,7 @@ class Ledger:
         prev = ""
         for row in self._rows():
             body = {k: v for k, v in row.items() if k != "hash"}
-            if hashlib.sha256((prev + _canon(body)).encode()).hexdigest()[:16] != row.get("hash"):
+            if _chain_hash(prev, body) != row.get("hash"):
                 return row.get("hash") or "<missing>"
             prev = row["hash"]
         return None

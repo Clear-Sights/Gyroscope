@@ -15,12 +15,13 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import tempfile
 import unittest
-from pathlib import Path
-from tests.plant_support import smoke_replace
+from tests.plant_support import PLUGIN, smoke_replace
 
-SHIM = Path(__file__).resolve().parents[1] / "hooks" / "dispatch.sh"
-EVENT = '{"hook_event_name":"PreToolUse","tool_name":"Read","tool_input":{},"session_id":"t"}'
+SHIM = PLUGIN / "hooks" / "dispatch.sh"
+EVENT = ('{"hook_event_name":"PreToolUse","tool_name":"Bash",'
+         '"tool_input":{"command":"git push --force origin main"},"session_id":"t"}')
 
 
 def run(env_extra: dict[str, str]) -> subprocess.CompletedProcess:
@@ -42,19 +43,22 @@ class WiringFaultsAreOpenButVisible(unittest.TestCase):
         self.assertNotIn("decision", payload)
 
     def test_TEETH_the_working_path_says_nothing(self) -> None:
-        done = run({"GYROSCOPE_STATE_DIR": "/tmp/asym-shim-vis"})
-        self.assertEqual(0, done.returncode)
-        self.assertNotIn("systemMessage", done.stdout,
+        with tempfile.TemporaryDirectory() as state:
+            done = run({"GYROSCOPE_STATE_DIR": state})
+        self.assertEqual(0, done.returncode, done.stderr)
+        payload = json.loads(done.stdout)
+        self.assertNotIn("systemMessage", payload,
                          "a healthy dispatch must not warn the user about anything")
+        hook = payload.get("hookSpecificOutput", {})
+        self.assertEqual("deny", hook.get("permissionDecision"),
+                         "the healthy path must prove the dispatcher actually evaluated a guard")
 
-    def test_the_check_can_fail(self) -> None:
-        root = Path(__file__).resolve().parents[1]
+    def test_the_check_can_fail(self) -> None:  # makoto-allow: teeth are in smoke_replace, which runs the target green, plants the fault, then requires red; a checker that cannot follow an imported helper reads this body as empty
         smoke_replace(self, SHIM,
                       b'''    printf '{"systemMessage":"gyroscope hook wiring fault: %s"}\\n' "$visible_fault"\n''',
                       b"    printf '{}\\n'\n", "tests.test_shim_visibility."
                       "WiringFaultsAreOpenButVisible."
-                      "test_TEETH_a_missing_interpreter_surfaces_and_still_allows", root,
-                      "a wiring fault that only writes stderr is invisible at exit 0")
+                      "test_TEETH_a_missing_interpreter_surfaces_and_still_allows", "a wiring fault that only writes stderr is invisible at exit 0")
 
 
 if __name__ == "__main__":

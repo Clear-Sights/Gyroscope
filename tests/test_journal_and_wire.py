@@ -27,9 +27,9 @@ import time
 import unittest
 from pathlib import Path
 
-from tests.plant_support import smoke_replace
+from tests.plant_support import PLUGIN, smoke_replace
 
-PLUGIN_ROOT = Path(__file__).resolve().parent.parent
+PLUGIN_ROOT = PLUGIN
 
 
 def run(raw: bytes, state_dir: Path) -> dict:
@@ -258,6 +258,23 @@ class TestByteBoundary(StateCase):
         body = run(raw, self.state)
         self.assertEqual(body.get("hookSpecificOutput", {}).get("permissionDecision"), "deny")
 
+    def test_a_bom_prefixed_envelope_still_reaches_the_clause_table(self):
+        """The third door -- the one this family closed twice and missed once.
+
+        A UTF-8 BOM is a legitimate encoding artifact, not damage. Strict-decoded as "utf-8" it
+        survives as a leading U+FEFF that json.loads REFUSES, so a STRUCTURALLY PERFECT envelope
+        took `main`'s unreadable_event path: NOT-EVALUABLE, the whole 24-clause table skipped for
+        that call, the destructive command ALLOWED, and the recorded reason ("unreadable event")
+        false of the payload. Makoto closed this at its wire layer and Ward at its dispatch layer;
+        gyroscope was the remaining door. Found by a cross-plugin duplicate index, not by a report.
+        """
+        body = run(b"\xef\xbb\xbf" + DESTRUCTIVE, self.state)
+        self.assertEqual(
+            body.get("hookSpecificOutput", {}).get("permissionDecision"), "deny",
+            "a BOM on the envelope must not let a destructive command skip the clause table")
+        self.assertEqual([r for r in rows(self.state) if r["kind"] == "fault"], [],
+                         "a BOM is an encoding artifact, not a fault to be counted")
+
     def test_clean_payload_reports_no_repair(self):
         run(DESTRUCTIVE, self.state)
         self.assertEqual([r for r in rows(self.state) if r["kind"] == "repair"], [])
@@ -352,24 +369,37 @@ class TestTheSubjectSurvivesTheRoundTrip(unittest.TestCase):
         self.assertIn("must name `real-target`", reason)
         self.assertEqual(dispatch._subject_of(reason), "real-target")
 
-    def test_the_check_can_fail(self) -> None:
-        """Restore the backtick-terminated span and this class must go red."""
-        root = Path(__file__).resolve().parents[1]
+    def test_the_check_can_fail(self) -> None:  # makoto-allow: teeth are in smoke_replace, which runs the target green, plants the fault, then requires red; a checker that cannot follow an imported helper reads this body as empty
+        """Restore the backtick-terminated span and this class must go red.
+
+        Each plant names the SPECIFIC wrong value it produces as `smoke_replace`'s `expected`,
+        not merely "AssertionError" -- that substring is satisfied by any assertion failing
+        anywhere in the target, including one the plant broke incidentally, so on its own it
+        cannot show the plant reached the property under test.
+
+        The two values are different failures, which is why both plants are needed. The backtick
+        plant TRUNCATES the subject to the EMPTY string, and empty is not merely wrong here: it
+        is the session-wide sentinel (see `test_a_session_wide_deny_still_reads_as_session_wide`),
+        so that truncation silently widens a deny aimed at one operand into one aimed at the whole
+        session. The forward-search plant HIJACKS the subject with the clause\'s own prose, which
+        is the opposite direction and the one the backtick cases cannot reach.
+        """
         smoke_replace(
-            self, root / "gyroscope" / "dispatch.py",
+            self, PLUGIN / "gyroscope" / "dispatch.py",
             b'    r"keyed on `(.{1,2000}?)`, so the guard must name `(.{1,2000}?)` too; ", re.DOTALL)',
             b'    r"keyed on `([^`]{1,200})`, so the guard must name `([^`]{1,200})` too; ")',
             "tests.test_journal_and_wire.TestTheSubjectSurvivesTheRoundTrip"
-            ".test_a_backtick_in_the_subject_does_not_truncate_the_row", root, "AssertionError")
+            ".test_a_backtick_in_the_subject_does_not_truncate_the_row",
+            "'' != 'api`prod.example'")
         # The other half of the same property, planted separately because it fails from the other
         # direction: reading the FIRST match instead of the last.
         smoke_replace(
-            self, root / "gyroscope" / "dispatch.py",
+            self, PLUGIN / "gyroscope" / "dispatch.py",
             b'    for last in _KEYED_ON_RX.finditer(reason or ""):\n        pass\n',
             b'    last = _KEYED_ON_RX.search(reason or "")\n',
             "tests.test_journal_and_wire.TestTheSubjectSurvivesTheRoundTrip"
             ".test_a_clause_whose_own_prose_says_keyed_on_does_not_hijack_the_row",
-            root, "AssertionError")
+            "'wrong' != 'real-target'")
 
 
 class TestABlockRowSaysWhichBlockItWas(unittest.TestCase):
@@ -403,15 +433,14 @@ class TestABlockRowSaysWhichBlockItWas(unittest.TestCase):
         self.state_dir = Path(self._tmp.name)
         self.addCleanup(self._tmp.cleanup)
 
-    def test_the_check_can_fail(self) -> None:
+    def test_the_check_can_fail(self) -> None:  # makoto-allow: teeth are in smoke_replace, which runs the target green, plants the fault, then requires red; a checker that cannot follow an imported helper reads this body as empty
         """Restore the 0 default and the fault block becomes indistinguishable from a clean one."""
-        root = Path(__file__).resolve().parents[1]
         smoke_replace(
-            self, root / "gyroscope" / "dispatch.py",
+            self, PLUGIN / "gyroscope" / "dispatch.py",
             b"            return int(digits)\n    return None",
             b"            return int(digits)\n    return 0",
             "tests.test_journal_and_wire.TestABlockRowSaysWhichBlockItWas"
-            ".test_a_message_stating_no_count_reads_as_unknown_not_zero", root, "AssertionError")
+            ".test_a_message_stating_no_count_reads_as_unknown_not_zero", "0 is not None")
 
 
 class TestTheSessionRowIsExactlyOnce(StateCase):
@@ -473,15 +502,15 @@ class TestTheSessionRowIsExactlyOnce(StateCase):
                    if r["kind"] == "session" and r["session_id"] == session]
             self.assertEqual(len(got), 1, f"round {round_no}: {len(got)} rows for one session")
 
-    def test_the_check_can_fail(self) -> None:
+    def test_the_check_can_fail(self) -> None:  # makoto-allow: teeth are in smoke_replace, which runs the target green, plants the fault, then requires red; a checker that cannot follow an imported helper reads this body as empty
         """Drop the digest and two differently-punctuated ids collide onto one marker again."""
-        root = Path(__file__).resolve().parents[1]
         smoke_replace(
-            self, root / "gyroscope" / "journal.py",
+            self, PLUGIN / "gyroscope" / "journal.py",
             b"    return f\"{safe}-{hashlib.sha256(session.encode('utf-8')).hexdigest()[:16]}\"",
             b"    return safe",
             "tests.test_journal_and_wire.TestTheSessionRowIsExactlyOnce"
-            ".test_ids_differing_only_in_punctuation_are_not_one_session", root, "AssertionError")
+            ".test_ids_differing_only_in_punctuation_are_not_one_session",
+            "Lists differ: ['a/b'] != ['a/b', 'a?b']")
 
 
 class TestRepairCountsMeanWhatTheyAreNamed(StateCase):
@@ -502,16 +531,16 @@ class TestRepairCountsMeanWhatTheyAreNamed(StateCase):
         self.assertEqual(repair["repaired"], 1)
         self.assertEqual(repair["escaped"], 0)
 
-    def test_the_check_can_fail(self) -> None:
+    def test_the_check_can_fail(self) -> None:  # makoto-allow: teeth are in smoke_replace, which runs the target green, plants the fault, then requires red; a checker that cannot follow an imported helper reads this body as empty
         """Sum the escape count back into the byte count and the field stops meaning bytes."""
-        root = Path(__file__).resolve().parents[1]
         smoke_replace(
-            self, root / "gyroscope" / "dispatch.py",
+            self, PLUGIN / "gyroscope" / "dispatch.py",
             b"        event, escaped = wire.scrub(event)\n    except Exception as exc:",
             b"        event, escaped = wire.scrub(event)\n        repaired += escaped\n"
             b"    except Exception as exc:",
             "tests.test_journal_and_wire.TestRepairCountsMeanWhatTheyAreNamed"
-            ".test_an_escape_only_envelope_reports_zero_bytes_repaired", root, "AssertionError")
+            ".test_an_escape_only_envelope_reports_zero_bytes_repaired",
+            "1 != 0 : no byte on that wire was undecodable")
 
 
 if __name__ == "__main__":

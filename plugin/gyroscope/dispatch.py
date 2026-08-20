@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import json
 import re
-from re import error
 import sys
 
 from . import clauses as C
@@ -86,7 +85,7 @@ def _subject(clause, event: dict) -> str:
             return ""
         try:
             return str(m.group(spec.get("group", 1)) or "")[:200]
-        except (IndexError, error):
+        except (IndexError, re.error):
             return ""
     return str(_get(event, spec) or "")[:200]
 
@@ -187,6 +186,11 @@ def _applicable(table, event: dict):
             continue
         if cl.tools and cl.tools != ["*"] and tool not in cl.tools:
             continue
+        # A live waiver parks enforcement of this one clause; see clauses.waiver_status. Silent
+        # here on purpose -- announcing it per tool call would be the recurring noise the waiver
+        # exists to stop. Stop announces it once per ending instead, where decisions are read.
+        if C.waiver_status(cl) == "live":
+            continue
         yield cl
 
 
@@ -206,22 +210,21 @@ def pre_tool_use(table, ledger: Ledger, event: dict) -> dict:
             if C.discharges(cl, event):
                 # A guard only licenses acts that come AFTER it. When one string carries both, the
                 # segment order decides: guard-then-act discharges, act-then-guard does not, and
-                # `git push && git status` is the second. Falling through to the match below is
-                # what turns the self-licence back into a deny.
+                # `git push && git status` is the second. Handling it exactly as the match below
+                # does is what turns the self-licence back into a deny.
+                act_at = guard_at = -1
                 if isinstance(command, str):
                     act_at = _first_index(cl, event, C.match, command)
                     guard_at = _first_index(cl, event, C.discharges, command)
-                    if act_at != -1 and guard_at > act_at:
-                        subject = _subject(cl, event)
-                        did = derive_id(session, agent, cl.id, subject)
-                        if not ledger.is_licensed(session, agent, did):
-                            ledger.demand(Demand(id=did, session=session, agent=agent,
-                                                 clause_id=cl.id, subject=subject,
-                                                 reason=cl.deny_reason))
-                            return _deny(_keyed_reason(cl, subject))
-                        continue
                 subject = _subject(cl, event)
                 did = derive_id(session, agent, cl.id, subject)
+                if act_at != -1 and guard_at > act_at:
+                    if not ledger.is_licensed(session, agent, did):
+                        ledger.demand(Demand(id=did, session=session, agent=agent,
+                                             clause_id=cl.id, subject=subject,
+                                             reason=cl.deny_reason))
+                        return _deny(_keyed_reason(cl, subject))
+                    continue
                 ledger.discharge(session, agent, did, "guard call observed")
                 continue
             if C.match(cl, event):
@@ -268,6 +271,8 @@ def _watch_standing(table, ledger: Ledger, event: dict, session: str, agent: str
     for cl in table:
         if cl.event not in ("Stop", "SubagentStop"):
             continue
+        if C.waiver_status(cl) == "live":
+            continue
         try:
             # Activation is observed on ordinary events, exactly as a standing guard is, and is
             # recorded through the same demand/discharge pair under a distinct subject -- so the
@@ -311,7 +316,7 @@ def reconcile(table, ledger: Ledger, event: dict) -> dict:
         open_rows = ledger.open_demands(session, agent)
     except Exception as exc:
         return _block(f"gyroscope could not read its ledger: {type(exc).__name__} "
-                      f"-- NOT-EVALUABLE, not a pass")
+                      "-- NOT-EVALUABLE, not a pass")
     undischarged = []
     event_name = event.get("hook_event_name", "Stop")
     for cl in table:
@@ -323,6 +328,19 @@ def reconcile(table, ledger: Ledger, event: dict) -> dict:
         # off, and a switched-off gate has zero coverage.
         if cl.event != event_name:
             continue
+        # Stop is where decisions are read, so it is where a waiver is announced -- once per
+        # ending, never per tool call. A parked clause the operator cannot see is the silent
+        # coverage loss a waiver is supposed to prevent, and an EXPIRED one enforces again here
+        # rather than lapsing quietly into permanent absence.
+        status = C.waiver_status(cl)
+        if status == "live":
+            waiver = cl.waiver or {}
+            print(f"gyroscope: [{cl.id}] PARKED by waiver until {waiver.get('until')} -- "
+                  f"{waiver.get('because', '')}", file=sys.stderr)
+            continue
+        if status == "expired":
+            print(f"gyroscope: [{cl.id}] waiver EXPIRED -- enforcing again. Re-argue the "
+                  "research and write a new date, or fix the guard.", file=sys.stderr)
         # Keyed activations materialize their own per-key demand rows as the occasions arrive.
         # They need no synthetic session-wide standing row; open_demands above reconciles them.
         if cl.activated_by is not None and cl.activated_by.get("key_from") is not None:
@@ -378,8 +396,9 @@ def _record(event: dict, out: dict) -> None:
             reason = str(wire_out.get("permissionDecisionReason") or "")
             clause_id = ""
             start = reason.find("[")
-            if start != -1 and reason.find("]", start) != -1:
-                clause_id = reason[start + 1:reason.find("]", start)]
+            end = reason.find("]", start)
+            if start != -1 and end != -1:
+                clause_id = reason[start + 1:end]
             journal.note_deny(event, clause_id, _subject_of(reason), reason)
         elif isinstance(out, dict) and out.get("decision") == "block":
             reason = str(out.get("reason") or "")

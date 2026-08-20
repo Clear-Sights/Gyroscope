@@ -18,8 +18,7 @@ quotes. An `&` following `<` or `>` is a redirect, not a control operator.
 from __future__ import annotations
 
 import unittest
-from pathlib import Path
-from tests.plant_support import smoke_replace
+from tests.plant_support import PLUGIN, smoke_replace
 
 from gyroscope import clauses as C
 
@@ -38,19 +37,18 @@ class SegmentsSplitOnControlOperatorsOnly(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertEqual(expected, C.segments(command))
 
-    def test_the_check_can_fail(self) -> None:
-        root = Path(__file__).resolve().parents[1]
-        path = root / "gyroscope" / "clauses.py"
+    def test_the_check_can_fail(self) -> None:  # makoto-allow: teeth are in smoke_replace, which runs the target green, plants the fault, then requires red; a checker that cannot follow an imported helper reads this body as empty
+        path = PLUGIN / "gyroscope" / "clauses.py"
         smoke_replace(self, path, b"            elif quote == '\"' and ch == \"\\\\\"",
                       b"            elif ch == \"\\\\\"", "tests.test_segmenter."
                       "SegmentsSplitOnControlOperatorsOnly."
-                      "test_TEETH_redirects_and_quoted_backslashes_do_not_split", root,
-                      "Lists differ")
+                      "test_TEETH_redirects_and_quoted_backslashes_do_not_split",
+                      "'rm -rf /'")
         smoke_replace(self, path, b'            if ch == "&" and buf and buf[-1] in "<>":',
                       b'            if False:', "tests.test_segmenter."
                       "SegmentsSplitOnControlOperatorsOnly."
-                      "test_TEETH_redirects_and_quoted_backslashes_do_not_split", root,
-                      "Lists differ")
+                      "test_TEETH_redirects_and_quoted_backslashes_do_not_split",
+                      "'make 2>', '1'")
 
 
 if __name__ == "__main__":

@@ -114,8 +114,17 @@ def _decode_counting(data: bytes):
     never be inflated by a U+FFFD the host legitimately sent. A number that cries wolf gets ignored,
     and takes the next real one with it.
     """
+    # "utf-8-sig", not "utf-8": a UTF-8 BOM (b"\xef\xbb\xbf") on the envelope strict-decodes
+    # to a leading U+FEFF that json.loads then REFUSES ("Unexpected UTF-8 BOM (decode using
+    # utf-8-sig)"), so a structurally perfect payload took `main`'s unreadable_event path --
+    # NOT-EVALUABLE, the whole clause table skipped for that call, the action allowed, and the
+    # recorded reason ("unreadable event") false of the payload. Reproduced two-sided against
+    # a BOM-prefixed PreToolUse envelope: makoto parses, gyroscope refused. Makoto fixed this
+    # at the wire layer and Ward at its dispatch layer (`raw.lstrip("﻿")`); gyroscope was
+    # the one door in the family that never got it. A BOM is a legitimate encoding artifact,
+    # not damage, so it does not count as a repair.
     try:
-        return scrub_text(data.decode("utf-8"))
+        return scrub_text(data.decode("utf-8-sig"))
     except UnicodeDecodeError:
         pass
     # `surrogateescape`, then scrub -- NOT `errors="replace"`.
@@ -130,4 +139,4 @@ def _decode_counting(data: bytes):
     # keeps the module's one guarantee: no surrogate leaves here. It also retires the
     # `data.count(b"\xef\xbf\xbd")` correction entirely, since surrogateescape never touches a
     # U+FFFD the host legitimately sent.
-    return scrub_text(data.decode("utf-8", errors="surrogateescape"))
+    return scrub_text(data.decode("utf-8-sig", errors="surrogateescape"))

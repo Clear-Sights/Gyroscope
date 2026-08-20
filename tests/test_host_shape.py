@@ -23,9 +23,9 @@ from __future__ import annotations
 import json
 import subprocess
 import unittest
-from pathlib import Path
+from tests.plant_support import REPO
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = REPO
 CLAUDE = "plugin/hooks/hooks.json"
 CODEX = "plugin/hooks/hooks.codex.json"
 SHIM = "dispatch.sh"
@@ -75,8 +75,16 @@ def timeout_findings(body: dict) -> list[str]:
     which no per-row `open` flag can express because the row never got to speak.
     """
     found: list[str] = []
-    for name, rows in (body.get("hooks") or {}).items():
-        for row in rows if isinstance(rows, list) else []:
+    hooks = body.get("hooks")
+    if not isinstance(hooks, dict):
+        return [f"hooks: expected record, received {type(hooks).__name__}"]
+    if not hooks:
+        return ["hooks: registers zero events -- timeout policy has no handlers to inspect"]
+    for name, rows in hooks.items():
+        if not isinstance(rows, list) or not rows:
+            found.append(f"{name}: expected a non-empty list of matcher entries")
+            continue
+        for row in rows:
             for handler in (row.get("hooks") or []) if isinstance(row, dict) else []:
                 seconds = handler.get("timeout")
                 if not isinstance(seconds, int) or isinstance(seconds, bool):
@@ -114,6 +122,9 @@ class CommittedHooksLoadOnTheHost(unittest.TestCase):
         absurd = {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": f"x/{SHIM}",
                                                  "timeout": 600}]}]}}
         self.assertTrue(timeout_findings(absurd), "missed an unbounded timeout")
+        self.assertTrue(timeout_findings({}), "missed the absence of a hooks record")
+        self.assertTrue(timeout_findings({"hooks": "nope"}),
+                        "malformed hooks must be a finding, not a detector crash")
 
     def test_the_check_can_fail(self) -> None:
         """MAGNET: the production check reads committed bytes via ``git show HEAD``.
