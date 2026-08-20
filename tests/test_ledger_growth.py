@@ -18,9 +18,9 @@ import pathlib
 import tempfile
 import unittest
 
+from tests.plant_support import PLUGIN, smoke_replace
 from gyroscope import clauses as C, dispatch
 from gyroscope.ledger import Demand, Ledger, derive_id
-from tests.plant_support import PLUGIN, smoke_replace
 
 
 def rows_written(state: str) -> int:
@@ -33,6 +33,10 @@ class RepeatedGuardsDoNotGrowTheLedger(unittest.TestCase):
         self._temp = tempfile.TemporaryDirectory()
         self.addCleanup(self._temp.cleanup)
         self.state = self._temp.name
+        previous = os.environ.get("GYROSCOPE_STATE_DIR")
+        self.addCleanup(
+            lambda: os.environ.pop("GYROSCOPE_STATE_DIR", None)
+            if previous is None else os.environ.__setitem__("GYROSCOPE_STATE_DIR", previous))
         os.environ["GYROSCOPE_STATE_DIR"] = self.state
 
     def test_TEETH_forty_identical_guards_write_one_row_per_clause(self) -> None:

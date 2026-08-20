@@ -42,6 +42,7 @@ class ProbeRunsOncePerEvent(unittest.TestCase):
 
         C._measure_probe = counting
         self.addCleanup(lambda: setattr(C, "_measure_probe", self._real))
+        self.addCleanup(C.reset_probe_cache)
 
     def _scan(self) -> int:
         clause = clause_with_probes()

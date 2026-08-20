@@ -203,12 +203,13 @@
       "python3 tools/check_schema.py"
     ],
     "discharged_by": {
-      "kind": "nonzero",
+      "kind": "regex",
       "event": "PostToolUse",
       "tools": [
         "Bash"
       ],
-      "on": "tool_response.exit_code",
+      "on": "tool_response",
+      "pattern": "^Error: Exit code [1-9][0-9]*\\b",
       "key_from": {
         "on": "tool_input.command",
         "pattern": "(?:^|[;&|]\\s*)\\s*((?:(?:python(?:3(?:\\.\\d+)?)?\\s+-m\\s+)?(?:pytest|unittest)|(?:python(?:3(?:\\.\\d+)?)?\\s+)?(?:\\./)?[^\\s;&|]*(?:check|verify)[^\\s;&|]*\\.(?:py|sh)))(?=\\s|$)",
@@ -218,15 +219,15 @@
     "window": "session, per normalized checker key",
     "deny_reason": "checker PASS lacks a recorded failing run for this same checker; plant/remove an input and run this checker until it returns nonzero before citing PASS",
     "fixtures_pos": [
-      1,
-      "2"
+      "Error: Exit code 1",
+      "Error: Exit code 2\nFAILED tests/test_x.py"
     ],
     "fixtures_neg": [
-      0,
-      "0"
+      "Error: Exit code 0",
+      "ok\n2 passed"
     ],
     "expect_unobserved": "the frozen corpus contains no explicit pytest/unittest or named *check*/verify script activation paired with observable PostToolUse outcome events; this keyed terminal occasion is therefore expected to have evaluated: 0, which is NOT-EVALUABLE rather than evidence of absence.",
-    "_fixture_note": "terminal keyed clause: fixtures_pos/neg validate the PostToolUse nonzero guard; fixtures_activate validate checker recognition",
+    "_fixture_note": "terminal keyed clause: fixtures_pos/neg validate the PostToolUse failure guard; fixtures_activate validate checker recognition. The guard reads tool_response as TEXT, not tool_response.exit_code: the host sends no exit-code field. A SUCCEEDING Bash call yields a dict keyed (stdout, stderr, interrupted, isImage, noOutputExpected); a FAILING one yields the STRING 'Error: Exit code N\\n<output>'. Measured over 2279 recorded tool results (1985 dict / 175 str / 119 list, 67 distinct keys) -- no exit_code member under any spelling. The engine returns False for a non-str under kind=regex, so the success dict cannot discharge and only a real failure does.",
     "_note": "Individual admission decision: a checker that accepts missing or invalid input produces the same green result as a sound checker, so doing nothing preserves a false licensing fact and downstream work consumes the opportunity to distinguish them. Recovery requires reversing the accepted PASS, planting or removing input, and replaying the checker decision path (restart path 3). The occasion is narrowed to explicit pytest/unittest runners and named *check*/verify Python or shell scripts. Each PreToolUse activation records the normalized checker command as its own obligation; only a nonzero PostToolUse for the equal key discharges it. Admit only if the frozen corpus reports candidate_fp=0 and TABLE_SUM remains below 20 per 1000."
   },
   {

@@ -97,9 +97,38 @@ every Stop blocks, and the documented remedy (plant an input, run the checker
 until nonzero) provably does not work. The natural end state is the gate being
 switched off, which silently removes all 24 clauses' coverage at once.
 
-## Fix direction (NOT yet applied — needs ground truth first)
+## Status: FIXED (2026-08-20)
 
-Read the field the host actually sends. Do NOT loosen the predicate so that it
-passes: converting a noisy gate into a silent one is strictly worse. If the
-field is genuinely absent, the honest result is NOT-EVALUABLE surfaced loudly,
-not a silent discharge and not a permanent block.
+Applied in `plugin/clauses/C08-check-can-fail.json` (+ rebuilt `clauses.json`),
+`plugin/clauses/SCHEMA.md`, and `plugin/tests/test_cross_event_key.py`.
+
+The predicate was NOT loosened. It reads the field the host actually sends, and
+the success payload still cannot discharge it. Two-sided proof, run against the
+real engine (`gyroscope.clauses.discharges`) on both true host shapes:
+
+| event payload                                   | fixed clause | old spelling |
+|-------------------------------------------------|--------------|--------------|
+| `"Error: Exit code 2\nFAILED tests/test_x.py"`  | **True**     | False        |
+| `{"stdout": "2 passed", "stderr": "", ...}`     | False        | False        |
+| `"Error: Exit code 0"`                          | False        | —            |
+| `"Error: Exit code 130"`                        | True         | —            |
+
+The old spelling returns False in BOTH directions on the same events: the defect
+reproduced on demand rather than merely argued.
+
+Non-string safety: `_base_predicate` returns False for a non-`str` value under
+`kind: "regex"`, so the success dict is rejected by type before the pattern is
+ever applied — no traversal, no exception.
+
+The test that manufactured the field was corrected, not deleted. It tests
+cross-event KEY correlation, which is a real property; it now correlates over
+the payload the host actually emits, and its own
+`test_the_key_equality_check_can_fail` still plants a fault in `dispatch.py` and
+proves the test goes red.
+
+### What does NOT change
+
+A live session that already accumulated undischargeable demand rows is not
+retroactively cleared by this fix — the open rows persist in
+`obligations.jsonl`. The fix stops new sessions from entering the state; it is
+not a migration.

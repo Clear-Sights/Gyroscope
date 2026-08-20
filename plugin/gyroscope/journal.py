@@ -48,7 +48,7 @@ PLUGIN = "gyroscope"
 
 
 def _root(root=None) -> pathlib.Path:
-    if root is not None:
+    if root:
         return pathlib.Path(root)
     from .ledger import state_dir
     return state_dir()

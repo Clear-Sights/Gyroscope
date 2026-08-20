@@ -15,11 +15,13 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import tempfile
 import unittest
 from tests.plant_support import PLUGIN, smoke_replace
 
 SHIM = PLUGIN / "hooks" / "dispatch.sh"
-EVENT = '{"hook_event_name":"PreToolUse","tool_name":"Read","tool_input":{},"session_id":"t"}'
+EVENT = ('{"hook_event_name":"PreToolUse","tool_name":"Bash",'
+         '"tool_input":{"command":"git push --force origin main"},"session_id":"t"}')
 
 
 def run(env_extra: dict[str, str]) -> subprocess.CompletedProcess:
@@ -41,10 +43,15 @@ class WiringFaultsAreOpenButVisible(unittest.TestCase):
         self.assertNotIn("decision", payload)
 
     def test_TEETH_the_working_path_says_nothing(self) -> None:
-        done = run({"GYROSCOPE_STATE_DIR": "/tmp/asym-shim-vis"})
-        self.assertEqual(0, done.returncode)
-        self.assertNotIn("systemMessage", done.stdout,
+        with tempfile.TemporaryDirectory() as state:
+            done = run({"GYROSCOPE_STATE_DIR": state})
+        self.assertEqual(0, done.returncode, done.stderr)
+        payload = json.loads(done.stdout)
+        self.assertNotIn("systemMessage", payload,
                          "a healthy dispatch must not warn the user about anything")
+        hook = payload.get("hookSpecificOutput", {})
+        self.assertEqual("deny", hook.get("permissionDecision"),
+                         "the healthy path must prove the dispatcher actually evaluated a guard")
 
     def test_the_check_can_fail(self) -> None:
         smoke_replace(self, SHIM,
