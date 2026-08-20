@@ -44,11 +44,15 @@ def smoke_replace(case: unittest.TestCase, path: Path, old: bytes, new: bytes,
     that ran only when the parent happened to be launched from the right directory would report a
     green seam for the wrong reason.
 
-    The child's combined output is RETURNED so a caller can assert a property of its own on it --
-    most usefully that the test named in `target` is the one that went red, which this helper's
-    own `expected` check does not establish. It also keeps a caller's body from consisting of a
-    single bare call, which reads as assertion-free to any analyzer that cannot follow an imported
-    helper, and a teeth test that trips the hollow-test gate is a poor advertisement for teeth.
+    The child's combined output is RETURNED so a caller can assert a property of its OWN on it.
+
+    Note what does NOT need asserting, because an earlier draft of this docstring said it did:
+    `target` names a single test METHOD at all twelve plant sites, so the child runs exactly one
+    test and a non-zero exit already proves THAT test went red. A caller re-checking the target
+    name in the output establishes nothing further. Capture the return for a genuinely new
+    property, or to keep a caller's body from being one bare call -- which reads as assertion-free
+    to any analyzer that cannot follow an imported helper, and a teeth test that trips the
+    hollow-test gate is a poor advertisement for teeth. Ceremony is not the same as teeth.
     """
     original = path.read_bytes()
     case.assertIn(old, original, f"plant seam changed in {path}")
