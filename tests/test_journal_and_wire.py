@@ -258,6 +258,23 @@ class TestByteBoundary(StateCase):
         body = run(raw, self.state)
         self.assertEqual(body.get("hookSpecificOutput", {}).get("permissionDecision"), "deny")
 
+    def test_a_bom_prefixed_envelope_still_reaches_the_clause_table(self):
+        """The third door -- the one this family closed twice and missed once.
+
+        A UTF-8 BOM is a legitimate encoding artifact, not damage. Strict-decoded as "utf-8" it
+        survives as a leading U+FEFF that json.loads REFUSES, so a STRUCTURALLY PERFECT envelope
+        took `main`'s unreadable_event path: NOT-EVALUABLE, the whole 24-clause table skipped for
+        that call, the destructive command ALLOWED, and the recorded reason ("unreadable event")
+        false of the payload. Makoto closed this at its wire layer and Ward at its dispatch layer;
+        gyroscope was the remaining door. Found by a cross-plugin duplicate index, not by a report.
+        """
+        body = run(b"\xef\xbb\xbf" + DESTRUCTIVE, self.state)
+        self.assertEqual(
+            body.get("hookSpecificOutput", {}).get("permissionDecision"), "deny",
+            "a BOM on the envelope must not let a destructive command skip the clause table")
+        self.assertEqual([r for r in rows(self.state) if r["kind"] == "fault"], [],
+                         "a BOM is an encoding artifact, not a fault to be counted")
+
     def test_clean_payload_reports_no_repair(self):
         run(DESTRUCTIVE, self.state)
         self.assertEqual([r for r in rows(self.state) if r["kind"] == "repair"], [])
