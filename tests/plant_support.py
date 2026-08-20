@@ -35,14 +35,20 @@ if str(PLUGIN) not in sys.path:
 
 
 def smoke_replace(case: unittest.TestCase, path: Path, old: bytes, new: bytes,
-                  target: str, expected: str) -> None:
-    """Mutate one seam, prove the NAMED test goes red because of it, and restore the bytes.
+                  target: str, expected: str) -> str:
+    """Mutate one seam, prove the NAMED test goes red because of it, restore, return the output.
 
     The child's environment is set explicitly rather than inherited, because the two directories
     it needs are no longer the same one: `TESTS_CWD` is where `tests.…` resolves from, `PLUGIN` is
     where `gyroscope` resolves from, and in the shipped layout those are parent and child. A plant
     that ran only when the parent happened to be launched from the right directory would report a
     green seam for the wrong reason.
+
+    The child's combined output is RETURNED so a caller can assert a property of its own on it --
+    most usefully that the test named in `target` is the one that went red, which this helper's
+    own `expected` check does not establish. It also keeps a caller's body from consisting of a
+    single bare call, which reads as assertion-free to any analyzer that cannot follow an imported
+    helper, and a teeth test that trips the hollow-test gate is a poor advertisement for teeth.
     """
     original = path.read_bytes()
     case.assertIn(old, original, f"plant seam changed in {path}")
@@ -64,3 +70,4 @@ def smoke_replace(case: unittest.TestCase, path: Path, old: bytes, new: bytes,
     case.assertIn(expected, output)
     restore()
     case.assertEqual(original, path.read_bytes(), f"restore differs from backup: {path}")
+    return output
