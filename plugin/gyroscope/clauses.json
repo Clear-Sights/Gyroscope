@@ -203,13 +203,12 @@
       "python3 tools/check_schema.py"
     ],
     "discharged_by": {
-      "kind": "regex",
+      "kind": "nonzero",
       "event": "PostToolUse",
       "tools": [
         "Bash"
       ],
-      "on": "tool_response",
-      "pattern": "^Error: Exit code [1-9][0-9]*\\b",
+      "on": "tool_response.exit_code",
       "key_from": {
         "on": "tool_input.command",
         "pattern": "(?:^|[;&|]\\s*)\\s*((?:(?:python(?:3(?:\\.\\d+)?)?\\s+-m\\s+)?(?:pytest|unittest)|(?:python(?:3(?:\\.\\d+)?)?\\s+)?(?:\\./)?[^\\s;&|=\"']*(?:check|verify)[^\\s;&|=\"']*\\.(?:py|sh)))(?=\\s|$)",
@@ -219,13 +218,18 @@
     "window": "session, per normalized checker key",
     "deny_reason": "checker PASS lacks a recorded failing run for this same checker; plant/remove an input and run this checker until it returns nonzero before citing PASS",
     "fixtures_pos": [
-      "Error: Exit code 1",
-      "Error: Exit code 2\nFAILED tests/test_x.py"
+      1,
+      "2"
     ],
     "fixtures_neg": [
-      "Error: Exit code 0",
-      "ok\n2 passed"
+      0,
+      "0"
     ],
+    "waiver": {
+      "until": "2026-11-20",
+      "renewed": 0,
+      "because": "NOT EVALUABLE against this host: no exit status reaches PostToolUse in any form. Measured over 71 recorded Bash PostToolUse payloads in makoto.record.db (the raw hook events, not the transcript): tool_response is a dict in every one, keyed (stdout, stderr, interrupted, isImage, noOutputExpected), plus returnCodeInterpretation once carrying the string 'No matches found'. No exit_code member under any spelling, and no 'Error: Exit code N' string -- that form is the TRANSCRIPT's rendering of a failed call, not the payload. Failing runs do produce PostToolUse events, so the clause is not merely unobserved: the evidence it asks for is absent from an event that arrives. Matching failure text in tool_response.stdout was measured instead and rejected: it fired on a real failure AND on a passing run (121 passed, 1 xfailed) in an 18-run sample, and predicates over prose are what this table exists to avoid. Ledger cost of leaving it live: 114 demand rows in one session, 0 discharges ever, every Stop blocked. Renew only by re-arguing this research; if the host ships an exit status, delete the waiver instead."
+    },
     "expect_unobserved": "the frozen corpus contains no explicit pytest/unittest or named *check*/verify script activation paired with observable PostToolUse outcome events; this keyed terminal occasion is therefore expected to have evaluated: 0, which is NOT-EVALUABLE rather than evidence of absence.",
     "_fixture_note": "terminal keyed clause: fixtures_pos/neg validate the PostToolUse failure guard; fixtures_activate validate checker recognition. The guard reads tool_response as TEXT, not tool_response.exit_code: the host sends no exit-code field. A SUCCEEDING Bash call yields a dict keyed (stdout, stderr, interrupted, isImage, noOutputExpected); a FAILING one yields the STRING 'Error: Exit code N\\n<output>'. Measured over 2279 recorded tool results (1985 dict / 175 str / 119 list, 67 distinct keys) -- no exit_code member under any spelling. The engine returns False for a non-str under kind=regex, so the success dict cannot discharge and only a real failure does.",
     "_note": "Individual admission decision: a checker that accepts missing or invalid input produces the same green result as a sound checker, so doing nothing preserves a false licensing fact and downstream work consumes the opportunity to distinguish them. Recovery requires reversing the accepted PASS, planting or removing input, and replaying the checker decision path (restart path 3). The occasion is narrowed to explicit pytest/unittest runners and named *check*/verify Python or shell scripts. Each PreToolUse activation records the normalized checker command as its own obligation; only a nonzero PostToolUse for the equal key discharges it. Admit only if the frozen corpus reports candidate_fp=0 and TABLE_SUM remains below 20 per 1000. 2026-08-20: the command-word class excludes = and quote characters. It was [^\\s;&|]*, which a shell VARIABLE ASSIGNMENT satisfies -- F=plugin/makoto/checks/writeThrashRevert.py contains 'check' and ends .py, so it both activated the clause and became the key, and nothing can discharge a row that names no runnable checker. Measured in one live session: 114 demand rows, 19 of them keyed on a token containing =, over 18 distinct never-dischargeable subjects. A genuine invocation never carries = inside the program token, and 'export PYTHONPATH=/x; python3 -m pytest tests/' still keys off its second segment. See tests/test_c08_activation.py."

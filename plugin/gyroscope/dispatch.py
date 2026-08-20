@@ -186,6 +186,11 @@ def _applicable(table, event: dict):
             continue
         if cl.tools and cl.tools != ["*"] and tool not in cl.tools:
             continue
+        # A live waiver parks enforcement of this one clause; see clauses.waiver_status. Silent
+        # here on purpose -- announcing it per tool call would be the recurring noise the waiver
+        # exists to stop. Stop announces it once per ending instead, where decisions are read.
+        if C.waiver_status(cl) == "live":
+            continue
         yield cl
 
 
@@ -266,6 +271,8 @@ def _watch_standing(table, ledger: Ledger, event: dict, session: str, agent: str
     for cl in table:
         if cl.event not in ("Stop", "SubagentStop"):
             continue
+        if C.waiver_status(cl) == "live":
+            continue
         try:
             # Activation is observed on ordinary events, exactly as a standing guard is, and is
             # recorded through the same demand/discharge pair under a distinct subject -- so the
@@ -321,6 +328,19 @@ def reconcile(table, ledger: Ledger, event: dict) -> dict:
         # off, and a switched-off gate has zero coverage.
         if cl.event != event_name:
             continue
+        # Stop is where decisions are read, so it is where a waiver is announced -- once per
+        # ending, never per tool call. A parked clause the operator cannot see is the silent
+        # coverage loss a waiver is supposed to prevent, and an EXPIRED one enforces again here
+        # rather than lapsing quietly into permanent absence.
+        status = C.waiver_status(cl)
+        if status == "live":
+            waiver = cl.waiver or {}
+            print(f"gyroscope: [{cl.id}] PARKED by waiver until {waiver.get('until')} -- "
+                  f"{waiver.get('because', '')}", file=sys.stderr)
+            continue
+        if status == "expired":
+            print(f"gyroscope: [{cl.id}] waiver EXPIRED -- enforcing again. Re-argue the "
+                  "research and write a new date, or fix the guard.", file=sys.stderr)
         # Keyed activations materialize their own per-key demand rows as the occasions arrive.
         # They need no synthetic session-wide standing row; open_demands above reconciles them.
         if cl.activated_by is not None and cl.activated_by.get("key_from") is not None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -51,6 +52,44 @@ class Clause:
     # Commands that constitute the occasion. Required when activated_by is present:
     # a precondition nothing exercises is a precondition nobody can show works.
     fixtures_activate: list[Any] | None = None
+    # Optional. Parks enforcement of THIS clause until `until`, because research established the
+    # guard is not evaluable against the host. The clause stays in the table -- still loaded,
+    # still admitted, still fixture-checked -- so a waiver hides no drift in the row itself.
+    # {"until": "YYYY-MM-DD", "because": "...", "renewed": <int>}. The WAIVER is what is
+    # default-dead, never the clause: on the day it lapses the clause enforces again and the
+    # lapse is announced, so doing nothing restores the check rather than retiring it.
+    waiver: dict[str, Any] | None = None
+
+
+def waiver_status(clause: Clause, today: date | None = None) -> str:
+    """`none`, `live`, or `expired` -- and anything unreadable is `expired`.
+
+    A waiver parks ONE clause whose guard research has shown is not evaluable against the host,
+    so a permanently undischargeable row stops blocking every ending. C08 is the case that forced
+    it: its guard asks for a nonzero PostToolUse result, and the host sends no exit status in any
+    form -- measured over 71 recorded Bash PostToolUse payloads, whose tool_response is always a
+    dict keyed (stdout, stderr, interrupted, isImage, noOutputExpected). A clause that can be
+    demanded and never discharged blocks forever, and the natural end of that is the whole gate
+    being switched off, which costs all 24 clauses at once.
+
+    The WAIVER is the thing that is default-dead, never the clause. `until` is a plain ISO date
+    compared in UTC; on the day it lapses the clause enforces again with no edit and no renewal,
+    so inaction restores the check rather than retiring it. A missing, non-string or unparseable
+    `until` reads as `expired` for the same reason: a waiver nobody can read is not a waiver, and
+    the safe fate is the clause doing its job. Renewal means arguing the research again and
+    writing a new date; twice renewed is the signal to change the baseline, not the waiver.
+    """
+    waiver = getattr(clause, "waiver", None)
+    if not isinstance(waiver, dict):
+        return "none"
+    raw = waiver.get("until")
+    if not isinstance(raw, str):
+        return "expired"
+    try:
+        until = date.fromisoformat(raw)
+    except ValueError:
+        return "expired"
+    return "live" if (today or datetime.now(timezone.utc).date()) <= until else "expired"
 
 
 def _resolve(event: dict[str, Any], dotted: str) -> Any:
@@ -413,6 +452,7 @@ def _load_object(data: dict[str, Any]) -> Clause:
         fixtures_neg=data["fixtures_neg"],
         activated_by=data.get("activated_by"),
         fixtures_activate=data.get("fixtures_activate"),
+        waiver=data.get("waiver"),
     )
     return _admit(clause)
 
