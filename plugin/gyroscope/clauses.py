@@ -441,8 +441,7 @@ def load_bundle(path) -> list[Clause]:
 
 def default_dir():
     """The clause folder beside the package. One folder, one file per clause."""
-    import pathlib
-    return pathlib.Path(__file__).resolve().parent.parent / "clauses"
+    return Path(__file__).resolve().parent.parent / "clauses"
 
 
 def load_default() -> list[Clause]:

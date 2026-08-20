@@ -143,11 +143,11 @@ class Ledger:
         licence would let the costly act through on the strength of nothing ever having happened.
         Absence is not a licence; only an observed discharge is.
         """
-        for row in self._rows():
-            if (row.get("kind") == "discharge" and row.get("id") == demand_id
-                    and row.get("session") == session and row.get("agent") == agent):
-                return True
-        return False
+        return any(
+            row.get("kind") == "discharge" and row.get("id") == demand_id
+            and row.get("session") == session and row.get("agent") == agent
+            for row in self._rows()
+        )
 
     def open_ids(self, session: str, agent: str) -> set[str]:
         opened, closed = set(), set()

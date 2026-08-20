@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import json
 import re
-from re import error
 import sys
 
 from . import clauses as C
@@ -86,7 +85,7 @@ def _subject(clause, event: dict) -> str:
             return ""
         try:
             return str(m.group(spec.get("group", 1)) or "")[:200]
-        except (IndexError, error):
+        except (IndexError, re.error):
             return ""
     return str(_get(event, spec) or "")[:200]
 
@@ -378,8 +377,9 @@ def _record(event: dict, out: dict) -> None:
             reason = str(wire_out.get("permissionDecisionReason") or "")
             clause_id = ""
             start = reason.find("[")
-            if start != -1 and reason.find("]", start) != -1:
-                clause_id = reason[start + 1:reason.find("]", start)]
+            end = reason.find("]", start)
+            if start != -1 and end != -1:
+                clause_id = reason[start + 1:end]
             journal.note_deny(event, clause_id, _subject_of(reason), reason)
         elif isinstance(out, dict) and out.get("decision") == "block":
             reason = str(out.get("reason") or "")
