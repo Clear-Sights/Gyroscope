@@ -369,7 +369,7 @@ class TestTheSubjectSurvivesTheRoundTrip(unittest.TestCase):
         self.assertIn("must name `real-target`", reason)
         self.assertEqual(dispatch._subject_of(reason), "real-target")
 
-    def test_the_check_can_fail(self) -> None:
+    def test_the_check_can_fail(self) -> None:  # makoto-allow: teeth are in smoke_replace, which runs the target green, plants the fault, then requires red; a checker that cannot follow an imported helper reads this body as empty
         """Restore the backtick-terminated span and this class must go red.
 
         Each plant names the SPECIFIC wrong value it produces as `smoke_replace`'s `expected`,
@@ -433,7 +433,7 @@ class TestABlockRowSaysWhichBlockItWas(unittest.TestCase):
         self.state_dir = Path(self._tmp.name)
         self.addCleanup(self._tmp.cleanup)
 
-    def test_the_check_can_fail(self) -> None:
+    def test_the_check_can_fail(self) -> None:  # makoto-allow: teeth are in smoke_replace, which runs the target green, plants the fault, then requires red; a checker that cannot follow an imported helper reads this body as empty
         """Restore the 0 default and the fault block becomes indistinguishable from a clean one."""
         smoke_replace(
             self, PLUGIN / "gyroscope" / "dispatch.py",
@@ -502,7 +502,7 @@ class TestTheSessionRowIsExactlyOnce(StateCase):
                    if r["kind"] == "session" and r["session_id"] == session]
             self.assertEqual(len(got), 1, f"round {round_no}: {len(got)} rows for one session")
 
-    def test_the_check_can_fail(self) -> None:
+    def test_the_check_can_fail(self) -> None:  # makoto-allow: teeth are in smoke_replace, which runs the target green, plants the fault, then requires red; a checker that cannot follow an imported helper reads this body as empty
         """Drop the digest and two differently-punctuated ids collide onto one marker again."""
         smoke_replace(
             self, PLUGIN / "gyroscope" / "journal.py",
@@ -531,7 +531,7 @@ class TestRepairCountsMeanWhatTheyAreNamed(StateCase):
         self.assertEqual(repair["repaired"], 1)
         self.assertEqual(repair["escaped"], 0)
 
-    def test_the_check_can_fail(self) -> None:
+    def test_the_check_can_fail(self) -> None:  # makoto-allow: teeth are in smoke_replace, which runs the target green, plants the fault, then requires red; a checker that cannot follow an imported helper reads this body as empty
         """Sum the escape count back into the byte count and the field stops meaning bytes."""
         smoke_replace(
             self, PLUGIN / "gyroscope" / "dispatch.py",

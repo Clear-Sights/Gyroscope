@@ -53,7 +53,7 @@ class WiringFaultsAreOpenButVisible(unittest.TestCase):
         self.assertEqual("deny", hook.get("permissionDecision"),
                          "the healthy path must prove the dispatcher actually evaluated a guard")
 
-    def test_the_check_can_fail(self) -> None:
+    def test_the_check_can_fail(self) -> None:  # makoto-allow: teeth are in smoke_replace, which runs the target green, plants the fault, then requires red; a checker that cannot follow an imported helper reads this body as empty
         smoke_replace(self, SHIM,
                       b'''    printf '{"systemMessage":"gyroscope hook wiring fault: %s"}\\n' "$visible_fault"\n''',
                       b"    printf '{}\\n'\n", "tests.test_shim_visibility."

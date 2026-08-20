@@ -77,7 +77,7 @@ class RepeatedGuardsDoNotGrowTheLedger(unittest.TestCase):
     # seam is present, the mutated run exits NON-ZERO, the named failure text appears, and
     # the file is byte-identical again afterwards. Observed failing: removing the dedup
     # guard makes this test red with `plant seam changed`.
-    def test_the_check_can_fail(self) -> None:
+    def test_the_check_can_fail(self) -> None:  # makoto-allow: teeth are in smoke_replace, which runs the target green, plants the fault, then requires red; a checker that cannot follow an imported helper reads this body as empty
         path = PLUGIN / "gyroscope" / "ledger.py"
         smoke_replace(self, path,
                       b"        if self.is_licensed(session, agent, demand_id):\n            return\n",

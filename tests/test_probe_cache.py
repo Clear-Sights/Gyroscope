@@ -58,7 +58,7 @@ class ProbeRunsOncePerEvent(unittest.TestCase):
         self.assertEqual(8, len(C.segments(" && ".join(f"deploy {i}" for i in range(8)))))
         self.assertEqual(1, self._scan(), "the same probe was measured more than once per event")
 
-    def test_the_check_can_fail(self) -> None:
+    def test_the_check_can_fail(self) -> None:  # makoto-allow: teeth are in smoke_replace, which runs the target green, plants the fault, then requires red; a checker that cannot follow an imported helper reads this body as empty
         path = PLUGIN / "gyroscope" / "clauses.py"
         smoke_replace(self, path, b"    key = json.dumps(spec, sort_keys=True, separators=(\",\", \":\"))\n",
                       b"    return _measure_probe(spec)\n", "tests.test_probe_cache."

@@ -37,7 +37,7 @@ class SegmentsSplitOnControlOperatorsOnly(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertEqual(expected, C.segments(command))
 
-    def test_the_check_can_fail(self) -> None:
+    def test_the_check_can_fail(self) -> None:  # makoto-allow: teeth are in smoke_replace, which runs the target green, plants the fault, then requires red; a checker that cannot follow an imported helper reads this body as empty
         path = PLUGIN / "gyroscope" / "clauses.py"
         smoke_replace(self, path, b"            elif quote == '\"' and ch == \"\\\\\"",
                       b"            elif ch == \"\\\\\"", "tests.test_segmenter."
