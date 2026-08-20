@@ -37,9 +37,11 @@ denied because its logger could not write would be a worse defect than the missi
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import pathlib
+import time
 from datetime import datetime, timezone
 
 PLUGIN = "gyroscope"
@@ -79,6 +81,97 @@ def _row(event: dict, kind: str, **extra) -> dict:
     }
 
 
+def _marker_name(session: str) -> str:
+    """A per-session marker filename unique to the session id, not merely derived from it.
+
+    The sanitizer alone was NOT injective: every character outside `[A-Za-z0-9-_]` mapped to `_`,
+    so `a/b` and `a?b` -- two different sessions -- produced the same marker, and whichever ran
+    second was recorded as already-noted. Its liveness row was lost, which is precisely the row
+    this journal exists to guarantee. The digest is taken over the FULL id, so distinct ids cannot
+    collide however they were spelled; the readable prefix is kept so a human listing the directory
+    can still tell which session a marker belongs to.
+    """
+    safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in session)[:64]
+    return f"{safe}-{hashlib.sha256(session.encode('utf-8')).hexdigest()[:16]}"
+
+
+_STALE_CLAIM_SECONDS = 60
+
+
+def _committed(marker: pathlib.Path) -> bool:
+    """True iff this marker stands for a row that actually LANDED.
+
+    A marker is created empty and only given a byte once `_append` has returned, so size is the
+    difference between "somebody is writing this row" and "this row is on record". Treating the
+    bare existence of the marker as proof is what made a failed append permanent: the row never
+    landed, the marker outlived it, and every later call short-circuited on it.
+    """
+    try:
+        return marker.stat().st_size > 0
+    except OSError:
+        return False
+
+
+def _steal_if_stale(marker: pathlib.Path) -> bool:
+    """Take over an UNCOMMITTED claim nobody finished. False if committed, or freshly claimed.
+
+    The recovery path unlinks its marker when `_append` raises -- but `unlink` can itself fail, and
+    a process can be killed between the claim and the row. Either way the marker survives with no
+    row behind it, and without this the session's liveness row is lost for good. That is silence,
+    and this module's contract is that it degrades to RE-NOTING, never to silence.
+
+    The age window is what keeps that recovery from undoing the race fix. Concurrent hook processes
+    claim within milliseconds of each other, so a marker younger than the window belongs to a
+    sibling that is still working and must be left alone; only one long past that can have been
+    abandoned. Re-stamping on takeover keeps two late arrivals from both stealing it.
+    """
+    try:
+        st = marker.stat()
+    except OSError:
+        return False
+    if st.st_size > 0 or (time.time() - st.st_mtime) < _STALE_CLAIM_SECONDS:
+        return False
+    try:
+        os.utime(marker)
+    except OSError:
+        return False
+    return True
+
+
+def _commit(marker: pathlib.Path) -> None:
+    """Mark the claim as standing for a row that landed. Best-effort: an uncommitted marker costs
+    one duplicate row a minute from now, which is the cheap direction."""
+    try:
+        marker.write_text("1")
+    except OSError:
+        pass
+
+
+def _claim(marker: pathlib.Path) -> bool:
+    """Atomically claim the right to write this session's row. True iff THIS process won it.
+
+    `O_CREAT | O_EXCL`, not `exists()` followed by a write: the latter is a check-then-act race,
+    and concurrent hook processes are the NORMAL condition here, not an edge case -- several tool
+    calls are in flight at once. Every process that lost that race had still passed the check and
+    still appended a row. Measured: 12 concurrent processes produced 12 "once per session" rows.
+    The kernel settles it in one syscall instead.
+
+    The directory is created only on the miss, so the common path stays at a single syscall.
+    """
+    try:
+        fd = os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError:
+        return _steal_if_stale(marker)
+    except FileNotFoundError:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            fd = os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            return _steal_if_stale(marker)
+    os.close(fd)
+    return True
+
+
 def note_session(event: dict, clause_count: int, root=None) -> None:
     """Record ONCE per session that Gyroscope was live, and with how many clauses.
 
@@ -90,14 +183,30 @@ def note_session(event: dict, clause_count: int, root=None) -> None:
         if not session:
             return
         path = _root(root)
-        seen = path / "sessions"
-        seen.mkdir(parents=True, exist_ok=True)
-        key = "".join(c if c.isalnum() or c in "-_" else "_" for c in session)[:96]
-        marker = seen / key
-        if marker.exists():
+        marker = path / "sessions" / _marker_name(session)
+        # The stat comes FIRST: the overwhelmingly common case is a session already noted, and
+        # that path should cost one syscall -- not an exclusive create on every tool call of
+        # every session. `_claim` then settles the genuine first-sighting atomically.
+        if _committed(marker):
             return
-        marker.write_text("")
-        _append(_row(event, "session", clauses=int(clause_count)), root=root)
+        if not _claim(marker):
+            return
+        try:
+            _append(_row(event, "session", clauses=int(clause_count)), root=root)
+        except Exception:
+            # The claim is only worth holding if the row it stands for actually landed. Releasing
+            # it on a failed append is what stops one transient write error from permanently
+            # suppressing this session's liveness row -- the single row that tells "ran and found
+            # nothing" apart from "never installed". Committing the marker first, as this did,
+            # made that suppression permanent and silent. Degrading to re-noting on the next call
+            # is noisy and still correct, which is the trade this module already declares.
+            try:
+                marker.unlink()
+            except OSError:
+                pass
+            raise
+        # Only now does the marker stand for a row that LANDED. See `_committed`.
+        _commit(marker)
     except Exception:
         pass
 
@@ -111,10 +220,17 @@ def note_deny(event: dict, clause_id: str, subject: str, reason: str, root=None)
         pass
 
 
-def note_block(event: dict, open_count: int, clause_ids, root=None) -> None:
-    """Record a terminal reconciliation block."""
+def note_block(event: dict, open_count, clause_ids, root=None) -> None:
+    """Record a terminal reconciliation block.
+
+    `open_count` is `None` when the block message stated no count -- which is what an internal
+    fault's block looks like. Recorded as `null` rather than coerced to `0`, because `0` is
+    already the clean terminal's own answer and the two outcomes must not share a row shape. See
+    `dispatch._stated_count`.
+    """
     try:
-        _append(_row(event, "block", open_count=int(open_count),
+        _append(_row(event, "block",
+                     open_count=None if open_count is None else int(open_count),
                      clause_ids=[str(c) for c in list(clause_ids)[:10]]), root=root)
     except Exception:
         pass
@@ -134,13 +250,26 @@ def note_fault(event: dict, stage: str, detail: str, *, failed_closed: bool, roo
         pass
 
 
-def note_repair(event: dict, repaired: int, root=None) -> None:
-    """Record that the envelope carried bytes repaired before it could be read.
+def note_repair(event: dict, repaired: int, *, escaped: int = 0, root=None) -> None:
+    """Record that the envelope had to be repaired before it could be read.
+    KEYWORD-ONLY, and that is not style. `escaped` was inserted as the third POSITIONAL parameter,
+    where `root` had been: every existing `note_repair(event, n, some_path)` call silently began
+    reading the path as a count, `int(Path(...))` raised inside the swallowed handler, and the
+    repair row vanished with no error anywhere. An audit row that disappears because a signature
+    changed under it is the exact failure this journal exists to prevent.
+
+    TWO COUNTS, NOT ONE SUM, because they count different things. `repaired` is UNDECODABLE BYTES
+    -- host bytes that were not valid UTF-8. `escaped` is UNPAIRED SURROGATE ESCAPES -- `\\uD8xx`
+    sequences that were perfectly valid ASCII on the wire and became lone surrogates only when
+    `json.loads` decoded them. The caller used to add them together and file the total under a
+    field named for bytes, so an envelope whose bytes were flawless could still report "3 bytes
+    repaired". `wire._decode_counting` goes to real trouble to make the byte count mean bytes;
+    adding a code-point count to it downstream gave that back.
 
     Distinct from `fault`: the event WAS evaluated, on a repaired payload. Conflating them would
     inflate the count of unevaluated calls, the one number this log exists to keep honest.
     """
     try:
-        _append(_row(event, "repair", repaired=int(repaired)), root=root)
+        _append(_row(event, "repair", repaired=int(repaired), escaped=int(escaped)), root=root)
     except Exception:
         pass
