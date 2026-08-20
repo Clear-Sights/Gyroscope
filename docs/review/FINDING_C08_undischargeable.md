@@ -126,6 +126,55 @@ the payload the host actually emits, and its own
 `test_the_key_equality_check_can_fail` still plants a fault in `dispatch.py` and
 proves the test goes red.
 
+## Second, independent defect: the occasion fires on lookalikes
+
+Found while reading the live ledger for the open rows, and separate from the
+discharge-field bug above. The command-word class was `[^\s;&|]*`, which a
+shell VARIABLE ASSIGNMENT satisfies:
+
+    F=plugin/makoto/checks/writeThrashRevert.py
+
+contains `check` and ends `.py`, so it both ACTIVATED the clause and became the
+obligation's key. Nothing can ever discharge that row — it names no checker
+that can be run. Measured in one live session:
+
+- 114 C08 demand rows total
+- 19 of them keyed on a token containing `=`
+- across 18 distinct, permanently undischargeable subjects
+  (`F=` / `M=` / `T=` / `SLICE="` shapes)
+
+This is the lookalike failure mode, and it is the expensive one: a clause that
+fires on things it cannot possibly be satisfied by produces recurring noise,
+the noise gets the gate switched off, and that silently removes all 24 clauses'
+coverage at once.
+
+Fixed by excluding `=` and quote characters from the command-word class, in the
+occasion pattern and in BOTH key patterns. Verified against the real engine —
+0 regressions:
+
+| command                                            | activates |
+|----------------------------------------------------|-----------|
+| `python3 -m pytest -q tests/`                      | yes       |
+| `pytest -q`                                        | yes       |
+| `python3 tools/check_schema.py`                    | yes       |
+| `./verify.sh`                                      | yes       |
+| `export PYTHONPATH=/x; python3 -m pytest tests/`   | yes (2nd segment) |
+| `F=plugin/makoto/checks/writeThrashRevert.py`      | **no**    |
+| `T=plugin/makoto/checks/canonFingerprints.py`      | **no**    |
+
+All three declared `fixtures_activate` still activate. Regression test:
+`tests/test_c08_activation.py`, whose `test_the_check_can_fail` puts the old
+character class back and proves the negative assertions are not vacuous.
+
+### Observed but NOT changed
+
+The occasion anchor `(?:^|\s)` is looser than the key anchor
+`(?:^|[;&|]\s*)\s*`, so a command can activate without producing a key — e.g.
+`cat plugin/makoto/checks/selfWiredCheck.py`. Left alone deliberately: the
+ledger holds 114 keyed demand rows and ZERO bare `standing` rows, so this
+asymmetry has caused no measured harm, and tightening it would narrow the
+occasion on speculation rather than on evidence.
+
 ### What does NOT change
 
 A live session that already accumulated undischargeable demand rows is not
