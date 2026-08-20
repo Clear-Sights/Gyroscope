@@ -42,11 +42,13 @@ class SegmentsSplitOnControlOperatorsOnly(unittest.TestCase):
         smoke_replace(self, path, b"            elif quote == '\"' and ch == \"\\\\\"",
                       b"            elif ch == \"\\\\\"", "tests.test_segmenter."
                       "SegmentsSplitOnControlOperatorsOnly."
-                      "test_TEETH_redirects_and_quoted_backslashes_do_not_split", "Lists differ")
+                      "test_TEETH_redirects_and_quoted_backslashes_do_not_split",
+                      "'rm -rf /'")
         smoke_replace(self, path, b'            if ch == "&" and buf and buf[-1] in "<>":',
                       b'            if False:', "tests.test_segmenter."
                       "SegmentsSplitOnControlOperatorsOnly."
-                      "test_TEETH_redirects_and_quoted_backslashes_do_not_split", "Lists differ")
+                      "test_TEETH_redirects_and_quoted_backslashes_do_not_split",
+                      "'make 2>', '1'")
 
 
 if __name__ == "__main__":

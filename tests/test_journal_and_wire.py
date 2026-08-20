@@ -370,13 +370,27 @@ class TestTheSubjectSurvivesTheRoundTrip(unittest.TestCase):
         self.assertEqual(dispatch._subject_of(reason), "real-target")
 
     def test_the_check_can_fail(self) -> None:
-        """Restore the backtick-terminated span and this class must go red."""
+        """Restore the backtick-terminated span and this class must go red.
+
+        Each plant names the SPECIFIC wrong value it produces as `smoke_replace`'s `expected`,
+        not merely "AssertionError" -- that substring is satisfied by any assertion failing
+        anywhere in the target, including one the plant broke incidentally, so on its own it
+        cannot show the plant reached the property under test.
+
+        The two values are different failures, which is why both plants are needed. The backtick
+        plant TRUNCATES the subject to the EMPTY string, and empty is not merely wrong here: it
+        is the session-wide sentinel (see `test_a_session_wide_deny_still_reads_as_session_wide`),
+        so that truncation silently widens a deny aimed at one operand into one aimed at the whole
+        session. The forward-search plant HIJACKS the subject with the clause\'s own prose, which
+        is the opposite direction and the one the backtick cases cannot reach.
+        """
         smoke_replace(
             self, PLUGIN / "gyroscope" / "dispatch.py",
             b'    r"keyed on `(.{1,2000}?)`, so the guard must name `(.{1,2000}?)` too; ", re.DOTALL)',
             b'    r"keyed on `([^`]{1,200})`, so the guard must name `([^`]{1,200})` too; ")',
             "tests.test_journal_and_wire.TestTheSubjectSurvivesTheRoundTrip"
-            ".test_a_backtick_in_the_subject_does_not_truncate_the_row", "AssertionError")
+            ".test_a_backtick_in_the_subject_does_not_truncate_the_row",
+            "'' != 'api`prod.example'")
         # The other half of the same property, planted separately because it fails from the other
         # direction: reading the FIRST match instead of the last.
         smoke_replace(
@@ -384,7 +398,8 @@ class TestTheSubjectSurvivesTheRoundTrip(unittest.TestCase):
             b'    for last in _KEYED_ON_RX.finditer(reason or ""):\n        pass\n',
             b'    last = _KEYED_ON_RX.search(reason or "")\n',
             "tests.test_journal_and_wire.TestTheSubjectSurvivesTheRoundTrip"
-            ".test_a_clause_whose_own_prose_says_keyed_on_does_not_hijack_the_row", "AssertionError")
+            ".test_a_clause_whose_own_prose_says_keyed_on_does_not_hijack_the_row",
+            "'wrong' != 'real-target'")
 
 
 class TestABlockRowSaysWhichBlockItWas(unittest.TestCase):
@@ -425,7 +440,7 @@ class TestABlockRowSaysWhichBlockItWas(unittest.TestCase):
             b"            return int(digits)\n    return None",
             b"            return int(digits)\n    return 0",
             "tests.test_journal_and_wire.TestABlockRowSaysWhichBlockItWas"
-            ".test_a_message_stating_no_count_reads_as_unknown_not_zero", "AssertionError")
+            ".test_a_message_stating_no_count_reads_as_unknown_not_zero", "0 is not None")
 
 
 class TestTheSessionRowIsExactlyOnce(StateCase):
@@ -494,7 +509,8 @@ class TestTheSessionRowIsExactlyOnce(StateCase):
             b"    return f\"{safe}-{hashlib.sha256(session.encode('utf-8')).hexdigest()[:16]}\"",
             b"    return safe",
             "tests.test_journal_and_wire.TestTheSessionRowIsExactlyOnce"
-            ".test_ids_differing_only_in_punctuation_are_not_one_session", "AssertionError")
+            ".test_ids_differing_only_in_punctuation_are_not_one_session",
+            "Lists differ: ['a/b'] != ['a/b', 'a?b']")
 
 
 class TestRepairCountsMeanWhatTheyAreNamed(StateCase):
@@ -523,7 +539,8 @@ class TestRepairCountsMeanWhatTheyAreNamed(StateCase):
             b"        event, escaped = wire.scrub(event)\n        repaired += escaped\n"
             b"    except Exception as exc:",
             "tests.test_journal_and_wire.TestRepairCountsMeanWhatTheyAreNamed"
-            ".test_an_escape_only_envelope_reports_zero_bytes_repaired", "AssertionError")
+            ".test_an_escape_only_envelope_reports_zero_bytes_repaired",
+            "1 != 0 : no byte on that wire was undecodable")
 
 
 if __name__ == "__main__":
