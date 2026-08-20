@@ -43,10 +43,40 @@ runs on every event, so the dispatcher IS invoked. The guard predicate is
 and it never matches. The host's PostToolUse payload for Bash does not appear
 to carry `tool_response.exit_code` under that spelling.
 
-NOT ESTABLISHED: the field name the host actually sends. Capturing one real
-payload requires patching the installed hooks/dispatch.sh to tee stdin; the
-auto-mode classifier denied that, and the published hooks doc truncates before
-the PostToolUse tool_response schema.
+## Root cause (ESTABLISHED, from 1984 recorded tool results)
+
+The host never sends `tool_response.exit_code`, under that or any spelling.
+Measured over this session's transcript (2,279 toolUseResult records: 1,985
+dict, 175 str, 119 list), across 67 distinct keys:
+
+- A SUCCEEDING Bash call yields a dict whose keys are exactly
+  `(stdout, stderr, interrupted, isImage, noOutputExpected)`, sometimes plus
+  `gitOperation`, `backgroundTaskId`, or `returnCodeInterpretation`. There is
+  no numeric exit-code member.
+- A FAILING Bash call does not yield a dict at all. It yields a STRING of the
+  form `"Error: Exit code 2\n<output>"`.
+
+So on success the key is absent, and on failure `tool_response` is not an
+object at all and cannot be traversed. `_get(event, "tool_response.exit_code")`
+resolves to nothing in both directions, which is why the guard has never once
+fired.
+
+## Fix
+
+    "discharged_by": {
+      "kind": "regex", "event": "PostToolUse", "tools": ["Bash"],
+      "on": "tool_response",
+      "pattern": "^Error: Exit code [1-9][0-9]*\\b",
+      "key_from": { ...unchanged... }
+    }
+
+`regex` on an arbitrary dotted event path is already a supported kind, so this
+needs no engine change.
+
+Also correct plugin/clauses/SCHEMA.md, which lists
+`{"kind": "nonzero", "on": "tool_response.exit_code"}` among the supported
+fingerprint kinds. The schema enshrines the field that does not exist, so the
+next clause author reproduces this bug by following the documentation.
 
 ## Why it passed its own tests
 
