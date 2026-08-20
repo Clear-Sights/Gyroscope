@@ -46,13 +46,18 @@ def smoke_replace(case: unittest.TestCase, path: Path, old: bytes, new: bytes,
 
     The child's combined output is RETURNED so a caller can assert a property of its OWN on it.
 
-    Note what does NOT need asserting, because an earlier draft of this docstring said it did:
-    `target` names a single test METHOD at all twelve plant sites, so the child runs exactly one
-    test and a non-zero exit already proves THAT test went red. A caller re-checking the target
-    name in the output establishes nothing further. Capture the return for a genuinely new
-    property, or to keep a caller's body from being one bare call -- which reads as assertion-free
-    to any analyzer that cannot follow an imported helper, and a teeth test that trips the
-    hollow-test gate is a poor advertisement for teeth. Ceremony is not the same as teeth.
+    THE TARGET IS RUN TWICE, and the first run is the point. A plant that only shows the target
+    RED with the fault is satisfied by a target that is red ALWAYS -- one already broken, or one
+    whose `expected` string went stale when the code moved underneath it. That is not
+    hypothetical: a plant in this family kept asserting a count that had changed, and stayed
+    "passing" because red-with-fault was all it ever checked. So the target must be observed GREEN
+    on the unmutated file first; only then does the red run below carry information.
+
+    That property lives HERE rather than in each caller, because it is the same property at every
+    plant site and a rule with two homes drifts apart at the first edit. It also means a caller's
+    body need not re-assert anything to be a real test: `target` names a single test METHOD at
+    every plant site, so the child runs exactly one test and the green-then-red pair already
+    proves THAT test went red BECAUSE of this seam. Ceremony is not the same as teeth.
     """
     original = path.read_bytes()
     case.assertIn(old, original, f"plant seam changed in {path}")
@@ -65,10 +70,17 @@ def smoke_replace(case: unittest.TestCase, path: Path, old: bytes, new: bytes,
             path.write_bytes(backup_path.read_bytes())
             backup_path.unlink()
     case.addCleanup(restore)
+    def run() -> subprocess.CompletedProcess:
+        return subprocess.run(["python3", "-m", "unittest", target], cwd=TESTS_CWD,
+                              text=True, capture_output=True, check=False,
+                              env={**os.environ, "PYTHONPATH": str(PLUGIN)})
+
+    before = run()
+    case.assertEqual(0, before.returncode,
+                     f"{target} is not green BEFORE the seam is mutated, so the red run below "
+                     f"would prove nothing:\n{before.stdout}{before.stderr}")
     path.write_bytes(original.replace(old, new, 1))
-    done = subprocess.run(["python3", "-m", "unittest", target], cwd=TESTS_CWD,
-                          text=True, capture_output=True, check=False,
-                          env={**os.environ, "PYTHONPATH": str(PLUGIN)})
+    done = run()
     output = done.stdout + done.stderr
     case.assertNotEqual(0, done.returncode, output)
     case.assertIn(expected, output)
