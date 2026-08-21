@@ -1,0 +1,78 @@
+{
+  "_what": "The rung ladder, and the model each rung binds to. Data, not prose: the resolver in gyroscope/routing.py compares `rank` and never a name, so renaming a rung cannot reorder the ladder and adding one cannot be done by spelling.",
+  "_why": "Codex is the workhorse. Per dollar it buys far more capacity than the dear tiers, so it holds every rung whose failure heals -- a bad bulk unit is caught by the check that was going to run anyway, and redoing it costs another cheap unit. Intelligence is the only edge worth paying for, and it is worth paying for only where the failure does NOT heal: where the wrong move destroys the evidence it was wrong, or cascades into work that inherits it. That is the whole allocation, and `pays_for` states it per rung.",
+  "_limit": "NOTHING HERE HAS BEEN PROBED. This file is a claim about which routes exist, and a claim is not a reachable route. `routing.plan()` refuses to return a route it has not seen a live probe for, which is the only place a binding becomes evidence. Treat a `model` string here as the name someone wrote down, not as a destination known to answer.",
+  "version": 1,
+  "resolution_order": [
+    "$GYROSCOPE_ROUTING_BINDINGS",
+    "<cwd>/prompts/routing.bindings.json",
+    "<account>/routing.bindings.json",
+    "<plugin root>/prompts/routing.bindings.json"
+  ],
+  "_resolution_note": "First hit wins, and the packaged copy is last: a repository or an account that states its own ladder overrides the shipped one rather than merging with it. A merge would let a repository silently inherit a rung it never declared, and the rung it inherits is the one that decides what gets paid for.",
+  "rungs": [
+    {
+      "name": "bulk",
+      "rank": 0,
+      "capability": "mechanical breadth -- many near-identical units, each cheap to check and cheap to redo",
+      "admits": ["bulk tests", "fixture sweeps", "mechanical edits across many files", "transcription and reformatting"],
+      "heals": true,
+      "_heals_because": "a wrong unit is caught by the check that was already going to run, and the repair is one more unit of the same cost",
+      "pays_for": "capacity",
+      "effort_ladder": ["low", "medium", "high"],
+      "_effort_note": "Effort inside a rung is DOSE, not capability: it never reorders the ladder, and it is spent smallest-first. Only this rung carries sub-levels, because it is the only one where the same capability answers a wide range of doses.",
+      "binding": {"host": "codex", "invoke": ["codex", "exec"]}
+    },
+    {
+      "name": "moderate",
+      "rank": 1,
+      "capability": "implementation against a settled design -- the shape is decided, the work is to build it",
+      "admits": ["implementation", "test authoring against a stated contract", "local refactors"],
+      "heals": true,
+      "_heals_because": "the design that would have been expensive to get wrong was settled before this rung was reached; a wrong implementation shows up as a red check",
+      "pays_for": "capacity",
+      "binding": {"host": "codex", "invoke": ["codex", "exec"]}
+    },
+    {
+      "name": "hard",
+      "rank": 2,
+      "capability": "hard or novel -- the design is not settled, and the judgment is the work",
+      "admits": ["difficult judgment", "novel design", "diagnosing a failure whose cause is not yet named"],
+      "heals": true,
+      "_heals_because": "a wrong judgment here is still visible before anything is built on it -- which is exactly what stops holding one rung up",
+      "pays_for": "capacity",
+      "binding": {"host": "codex", "invoke": ["codex", "exec"]}
+    },
+    {
+      "name": "extreme",
+      "rank": 3,
+      "capability": "extreme or cross-cutting -- the unit's blast radius crosses subsystem boundaries",
+      "admits": ["cross-cutting change", "migrations", "anything later work will inherit without re-deriving"],
+      "heals": false,
+      "_heals_because": "by the time it is wrong, other work has already been built on it; the repair is not this unit, it is everything downstream of it",
+      "pays_for": "intelligence",
+      "binding": {"host": "claude", "model": "claude-opus-5"}
+    },
+    {
+      "name": "pivotal",
+      "rank": 4,
+      "capability": "PIVOTAL and reasoning-heavy -- what the rest of the run inherits, where the failure does not heal",
+      "admits": ["unhealing failure", "cascading failure", "bulk verification of a clause that is being trusted"],
+      "heals": false,
+      "_heals_because": "the wrong move destroys the evidence that it was wrong, so there is no later observation that reports it",
+      "pays_for": "intelligence",
+      "binding": {"host": "claude", "model": "claude-opus-5"}
+    }
+  ],
+  "triggers": [
+    {"name": "bulk", "floor": "bulk", "because": "many near-identical units, each cheap to redo"},
+    {"name": "implementation", "floor": "moderate", "because": "the design is settled; building it is the work"},
+    {"name": "difficult_judgment", "floor": "hard", "because": "the highest band below the top: judgment is the work, but a wrong call is still visible before anything rests on it"},
+    {"name": "novel", "floor": "hard", "because": "no settled shape to build against"},
+    {"name": "cross_cutting", "floor": "extreme", "because": "the blast radius leaves the subsystem, so the repair is not this unit"},
+    {"name": "cascading", "floor": "pivotal", "because": "later work inherits the error and re-states it, so the cost grows after the mistake rather than at it"},
+    {"name": "unhealing", "floor": "pivotal", "because": "the wrong move destroys the evidence it was wrong; nothing downstream reports it"},
+    {"name": "bulk_verification_of_trusted_clauses", "floor": "pivotal", "because": "this is the trap the ladder exists to name. It LOOKS like bulk -- many near-identical clauses, each individually cheap -- and it is not, because the output is a decision to TRUST. A clause wrongly waved through is then relied on, and everything that relies on it is built on a check nobody will run again. The failure does not heal, so it takes the top rung and not the bottom one."}
+  ],
+  "_triggers_note": "Triggers fall UPWARD only. A unit's rung is the highest of the one it states and the floor of every trigger that is live on it -- so unhealing beats bulk, and no trigger can ever pull a unit down to a cheaper rung than it declared. With no trigger live, the unit's stated rung stands."
+}
